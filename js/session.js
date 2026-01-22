@@ -290,7 +290,7 @@ function updateParticipantsList(participants) {
         const lastUpdate = p.last_update ? new Date(p.last_update).toLocaleTimeString() : 'Never';
         
         return `
-            <div class="participant-item ${isOnline ? '' : 'offline'}">
+            <div class="participant-item ${isOnline ? '' : 'offline'}" data-participant-id="${p.id}" style="cursor: ${isOnline ? 'pointer' : 'default'};">
                 <div class="participant-name">${p.name}</div>
                 <div class="participant-status ${isOnline ? 'online' : ''}">
                     ${isOnline ? '🟢 Sharing Location' : '⚫ Offline'}
@@ -301,6 +301,19 @@ function updateParticipantsList(participants) {
             </div>
         `;
     }).join('');
+    
+    // Add click handlers to online participants
+    participants.forEach(p => {
+        const isOnline = p.is_online !== undefined ? p.is_online : (p.latitude && p.longitude);
+        if (isOnline && p.latitude && p.longitude) {
+            const element = participantsList.querySelector(`[data-participant-id="${p.id}"]`);
+            if (element) {
+                element.addEventListener('click', () => {
+                    centerMapOnParticipant(p.id);
+                });
+            }
+        }
+    });
 }
 
 // Update map markers
@@ -393,6 +406,19 @@ function updateMapMarkers(participants) {
             delete markers[participant.id];
         }
     });
+}
+
+// Center map on a specific participant
+function centerMapOnParticipant(participantId) {
+    const marker = markers[participantId];
+    if (marker) {
+        const latLng = marker.getLatLng();
+        map.setView(latLng, 16);
+        marker.openPopup();
+        showMessage('Map centered on participant', 'success');
+    } else {
+        showMessage('Participant location not available', 'error');
+    }
 }
 
 // Center map on user

@@ -291,6 +291,35 @@ header h1 {
     border-color: var(--primary-color);
 }
 
+/* Auth Divider */
+.auth-divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    margin: 20px 0;
+    color: var(--text-secondary);
+}
+
+.auth-divider::before,
+.auth-divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.auth-divider span {
+    padding: 0 15px;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+/* Google Sign-In Container */
+.google-signin-container {
+    display: flex;
+    justify-content: center;
+    margin: 20px 0;
+}
+
 .auth-footer {
     text-align: center;
     color: var(--text-secondary);
@@ -532,6 +561,13 @@ header h1 {
     padding: 15px;
     border-radius: 8px;
     border-left: 4px solid var(--primary-color);
+    transition: all 0.2s ease;
+}
+
+.participant-item:not(.offline):hover {
+    background: rgba(37, 99, 235, 0.05);
+    transform: translateX(5px);
+    box-shadow: var(--shadow);
 }
 
 .participant-item.offline {

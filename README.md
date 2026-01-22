@@ -369,4 +369,4 @@ Contributions are welcome! Please feel free to submit pull requests or open issu
 
 **Developed with ❤️ for real-time location sharing**
 
-**Tech Stack**: Flask + Python + MySQL + Leaflet.js + JavaScript
+**Tech Stack**: Flask + Python + SQLite + Leaflet.js + JavaScript

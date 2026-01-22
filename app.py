@@ -3,7 +3,7 @@ Hunt-Hunt-Planur - Real-time Location Sharing Application
 Flask Backend Server
 """
 
-from flask import Flask, request, jsonify, session, send_from_directory
+from flask import Flask, request, jsonify, session, send_from_directory, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -11,6 +11,8 @@ from datetime import datetime
 import string
 import random
 import os
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 
 app = Flask(__name__, static_folder='.', static_url_path='')
 
@@ -27,7 +29,10 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True, nullable=False)
     email = db.Column(db.String(100), unique=True, nullable=False)
-    password_hash = db.Column(db.String(255), nullable=False)
+    password_hash = db.Column(db.String(255), nullable=True)  # Nullable for OAuth users
+    google_id = db.Column(db.String(255), unique=True, nullable=True)  # Google OAuth ID
+    profile_picture = db.Column(db.String(500), nullable=True)  # Profile picture URL
+    auth_provider = db.Column(db.String(20), default='local')  # 'local' or 'google'
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime)
     
@@ -174,6 +179,88 @@ def check_auth():
             'email': session['email']
         })
     return jsonify({'authenticated': False})
+
+@app.route('/api/google_login', methods=['POST'])
+def google_login():
+    """Handle Google OAuth login"""
+    data = request.get_json()
+    token = data.get('credential')
+    
+    if not token:
+        return jsonify({'success': False, 'message': 'No credential provided'}), 400
+    
+    try:
+        # Verify the Google token
+        idinfo = id_token.verify_oauth2_token(
+            token,
+            google_requests.Request(),
+            app.config['GOOGLE_CLIENT_ID']
+        )
+        
+        # Get user info from token
+        google_id = idinfo['sub']
+        email = idinfo['email']
+        name = idinfo.get('name', email.split('@')[0])
+        picture = idinfo.get('picture', '')
+        
+        # Check if user exists
+        user = User.query.filter_by(google_id=google_id).first()
+        
+        if not user:
+            # Check if email already exists with local auth
+            existing_user = User.query.filter_by(email=email).first()
+            if existing_user:
+                # Link Google account to existing user
+                existing_user.google_id = google_id
+                existing_user.profile_picture = picture
+                existing_user.auth_provider = 'google'
+                user = existing_user
+            else:
+                # Create new user
+                # Generate unique username from email
+                base_username = email.split('@')[0]
+                username = base_username
+                counter = 1
+                while User.query.filter_by(username=username).first():
+                    username = f"{base_username}{counter}"
+                    counter += 1
+                
+                user = User(
+                    username=username,
+                    email=email,
+                    google_id=google_id,
+                    profile_picture=picture,
+                    auth_provider='google',
+                    password_hash=None  # No password for OAuth users
+                )
+                db.session.add(user)
+        
+        # Update last login
+        user.last_login = datetime.utcnow()
+        db.session.commit()
+        
+        # Set session
+        session['user_id'] = user.id
+        session['username'] = user.username
+        session['email'] = user.email
+        
+        return jsonify({
+            'success': True,
+            'message': 'Login successful',
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'profile_picture': user.profile_picture
+            }
+        })
+        
+    except ValueError as e:
+        # Invalid token
+        return jsonify({'success': False, 'message': 'Invalid Google token'}), 401
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': 'Server error'}), 500
 
 # API Routes - Session Management
 @app.route('/api/create_session', methods=['POST'])
