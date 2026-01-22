@@ -66,7 +66,9 @@ function displaySessions(sessions) {
     historyList.innerHTML = sessions.map(session => {
         const isActive = session.is_active;
         const isCreator = session.is_creator;
-        const statusBadge = isActive 
+        const userIsActive = session.user_is_active;
+        
+        const statusBadge = isActive
             ? '<span style="color: #10b981; font-weight: bold;">● Active</span>'
             : '<span style="color: #64748b; font-weight: bold;">○ Ended</span>';
         
@@ -74,12 +76,17 @@ function displaySessions(sessions) {
             ? '<span style="background: #2563eb; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: bold;">Creator</span>'
             : '<span style="background: #8b5cf6; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: bold;">Participant</span>';
         
+        // Show "Removed" badge if user is not active in an active session and is not the creator
+        const removedBadge = isActive && !userIsActive && !isCreator
+            ? '<span style="background: #ef4444; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: bold;">Removed</span>'
+            : '';
+        
         const creatorInfo = !isCreator ? `<p class="session-meta">Created by: ${session.creator_name}</p>` : '';
         
-        const actionButton = isActive
-            ? `<a href="session.html?code=${session.session_code}" class="btn btn-primary btn-small">
-                ${session.user_is_active ? 'Open' : 'Rejoin'}
-               </a>`
+        const actionButton = isActive && userIsActive
+            ? `<a href="session.html?code=${session.session_code}" class="btn btn-primary btn-small">Open</a>`
+            : isActive && !userIsActive && !isCreator
+            ? `<a href="session.html?code=${session.session_code}" class="btn btn-secondary btn-small">Rejoin</a>`
             : '';
         
         const endButton = isActive && isCreator
@@ -91,10 +98,19 @@ function displaySessions(sessions) {
             ? `<p class="session-meta">Participants: ${session.participant_count || 0} total (${session.active_participant_count} active)</p>`
             : `<p class="session-meta">Participants: ${session.participant_count || 0} total</p>`;
         
+        // Edit button only for creators
+        const editButton = isCreator
+            ? `<button class="btn-icon" onclick="editSessionName('${session.session_code}', '${session.session_name.replace(/'/g, "\\'")}', event)" title="Edit name">✏️</button>`
+            : '';
+        
         return `
             <div class="session-item">
                 <div class="session-details">
-                    <h4>${session.session_name} ${statusBadge} ${roleBadge}</h4>
+                    <h4>
+                        <span class="session-name-display" data-code="${session.session_code}">${session.session_name}</span>
+                        ${editButton}
+                        ${statusBadge} ${roleBadge} ${removedBadge}${session.location_name ? ` <span style="color: #8b5cf6; font-size: 0.9rem;">📍 ${session.location_name}</span>` : ''}
+                    </h4>
                     <p class="session-code">Code: ${session.session_code}</p>
                     ${creatorInfo}
                     <p class="session-meta">Created: ${new Date(session.created_at).toLocaleString()}</p>
@@ -135,6 +151,48 @@ function filterSessions(filter) {
     }
     
     displaySessions(filtered);
+}
+
+// Edit session name function
+async function editSessionName(sessionCode, currentName, event) {
+    event.stopPropagation();
+    
+    const newName = prompt('Enter new session name:', currentName);
+    
+    if (!newName || newName === currentName) {
+        return;
+    }
+    
+    if (newName.length < 3) {
+        showMessage('Session name must be at least 3 characters', 'error');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/update_session_name', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                session_code: sessionCode,
+                session_name: newName
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showMessage('Session name updated successfully!', 'success');
+            // Reload history to show updated name
+            loadHistory();
+        } else {
+            showMessage(data.message || 'Failed to update session name', 'error');
+        }
+    } catch (error) {
+        showMessage('An error occurred. Please try again.', 'error');
+        console.error('Update session name error:', error);
+    }
 }
 
 // End session function

@@ -11,6 +11,7 @@ from datetime import datetime
 import string
 import random
 import os
+import requests
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
@@ -45,6 +46,7 @@ class Session(db.Model):
     session_code = db.Column(db.String(10), unique=True, nullable=False)
     creator_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     session_name = db.Column(db.String(100), nullable=False)
+    location_name = db.Column(db.String(200), nullable=True)  # Approximate location name
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
     
@@ -79,6 +81,57 @@ def generate_session_code():
         if not Session.query.filter_by(session_code=code).first():
             return code
     return None
+
+def reverse_geocode(latitude, longitude):
+    """Get location name from coordinates using Nominatim (OpenStreetMap)"""
+    try:
+        url = f"https://nominatim.openstreetmap.org/reverse"
+        params = {
+            'lat': latitude,
+            'lon': longitude,
+            'format': 'json',
+            'zoom': 14,  # City/town level
+            'addressdetails': 1
+        }
+        headers = {
+            'User-Agent': 'Hunt-Hunt-Planur/1.0'  # Required by Nominatim
+        }
+        
+        response = requests.get(url, params=params, headers=headers, timeout=5)
+        
+        if response.status_code == 200:
+            data = response.json()
+            address = data.get('address', {})
+            
+            # Build location name from available components
+            parts = []
+            
+            # Try to get neighborhood, suburb, or district
+            for key in ['neighbourhood', 'suburb', 'district', 'quarter']:
+                if key in address:
+                    parts.append(address[key])
+                    break
+            
+            # Add city/town/village
+            for key in ['city', 'town', 'village', 'municipality']:
+                if key in address:
+                    parts.append(address[key])
+                    break
+            
+            # Add country
+            if 'country' in address:
+                parts.append(address['country'])
+            
+            if parts:
+                return ', '.join(parts)
+            
+            # Fallback to display_name if no specific parts found
+            return data.get('display_name', 'Unknown Location')
+        
+        return None
+    except Exception as e:
+        print(f"Reverse geocoding error: {e}")
+        return None
 
 # Routes - Serve HTML files
 @app.route('/')
@@ -274,6 +327,15 @@ def create_session():
     if not session_name:
         return jsonify({'success': False, 'message': 'Session name required'}), 400
     
+    # Get location coordinates if provided
+    latitude = data.get('latitude')
+    longitude = data.get('longitude')
+    location_name = None
+    
+    # Try to reverse geocode the location
+    if latitude is not None and longitude is not None:
+        location_name = reverse_geocode(latitude, longitude)
+    
     session_code = generate_session_code()
     if not session_code:
         return jsonify({'success': False, 'message': 'Failed to generate session code'}), 500
@@ -282,7 +344,8 @@ def create_session():
     new_session = Session(
         session_code=session_code,
         creator_id=session['user_id'],
-        session_name=session_name
+        session_name=session_name,
+        location_name=location_name
     )
     
     try:
@@ -335,6 +398,7 @@ def get_sessions():
             'id': s.id,
             'session_code': s.session_code,
             'session_name': s.session_name,
+            'location_name': s.location_name,
             'created_at': s.created_at.isoformat(),
             'is_active': s.is_active,
             'participant_count': participant_count,
@@ -348,22 +412,33 @@ def get_joined_sessions():
     if 'user_id' not in session:
         return jsonify({'success': False, 'message': 'Not authenticated'}), 401
     
-    # Get sessions where user has been a participant (even if they left)
-    # Show all active sessions they've joined, regardless of their current participation status
+    user_id = session['user_id']
+    
+    # Debug: Check all participants for this user
+    all_participants = SessionParticipant.query.filter_by(user_id=user_id).all()
+    print(f"DEBUG: User {user_id} has {len(all_participants)} total participant records")
+    for p in all_participants:
+        s = Session.query.get(p.session_id)
+        if s:
+            print(f"  - Session {s.session_code}: participant_active={p.is_active}, session_active={s.is_active}, is_creator={s.creator_id == user_id}")
+    
+    # Get ALL sessions where user has joined (regardless of participant is_active status)
+    # Show both active and left sessions, but only if the session itself is still active
+    # Don't show sessions the user created (those appear in "Your Created Sessions")
     joined_sessions = db.session.query(Session).join(
         SessionParticipant, Session.id == SessionParticipant.session_id
     ).filter(
-        SessionParticipant.user_id == session['user_id'],
-        # Removed is_active check for participant - show even if they left
-        Session.is_active == True,  # Only show if session is still active
-        Session.creator_id != session['user_id']  # Not the creator
+        SessionParticipant.user_id == user_id,
+        Session.is_active == True,  # Only show if session is still active (not ended)
+        Session.creator_id != user_id  # Not the creator
     ).distinct().order_by(Session.created_at.desc()).all()
     
-    print(f"DEBUG: User {session['user_id']} has joined {len(joined_sessions)} sessions")
+    print(f"DEBUG: Found {len(joined_sessions)} joined sessions (excluding created ones)")
     
     sessions_data = []
     for s in joined_sessions:
         creator = User.query.get(s.creator_id)
+        # Count only active participants
         participant_count = SessionParticipant.query.filter_by(
             session_id=s.id,
             is_active=True
@@ -372,13 +447,14 @@ def get_joined_sessions():
         # Check if user is currently active in this session
         user_participant = SessionParticipant.query.filter_by(
             session_id=s.id,
-            user_id=session['user_id']
+            user_id=user_id
         ).first()
         
         sessions_data.append({
             'id': s.id,
             'session_code': s.session_code,
             'session_name': s.session_name,
+            'location_name': s.location_name,
             'created_at': s.created_at.isoformat(),
             'is_active': s.is_active,
             'participant_count': participant_count,
@@ -440,6 +516,7 @@ def get_all_sessions_history():
             'id': s.id,
             'session_code': s.session_code,
             'session_name': s.session_name,
+            'location_name': s.location_name,
             'created_at': s.created_at.isoformat(),
             'is_active': s.is_active,
             'participant_count': max_participant_count,
@@ -485,6 +562,7 @@ def get_all_sessions_history():
             'id': s.id,
             'session_code': s.session_code,
             'session_name': s.session_name,
+            'location_name': s.location_name,
             'created_at': s.created_at.isoformat(),
             'is_active': s.is_active,
             'participant_count': max_participant_count,
@@ -528,6 +606,39 @@ def end_session():
         db.session.rollback()
         return jsonify({'success': False, 'message': 'Server error'}), 500
 
+@app.route('/api/update_session_name', methods=['POST'])
+def update_session_name():
+    """Update session name (creator only)"""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'message': 'Not authenticated'}), 401
+    
+    data = request.get_json()
+    session_code = data.get('session_code')
+    new_name = data.get('session_name')
+    
+    if not session_code or not new_name:
+        return jsonify({'success': False, 'message': 'Session code and name required'}), 400
+    
+    if len(new_name) < 3:
+        return jsonify({'success': False, 'message': 'Session name must be at least 3 characters'}), 400
+    
+    # Find session and verify creator
+    user_session = Session.query.filter_by(session_code=session_code).first()
+    
+    if not user_session:
+        return jsonify({'success': False, 'message': 'Session not found'}), 404
+    
+    if user_session.creator_id != session['user_id']:
+        return jsonify({'success': False, 'message': 'Only the session creator can edit the name'}), 403
+    
+    try:
+        user_session.session_name = new_name
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Session name updated successfully'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': 'Server error'}), 500
+
 @app.route('/api/join_session', methods=['POST'])
 def join_session():
     data = request.get_json()
@@ -545,27 +656,38 @@ def join_session():
     if not user_session:
         return jsonify({'success': False, 'message': 'Session not found or inactive'}), 404
     
-    # Check if already a participant
+    # Check if already a participant (active or inactive)
     if user_id:
         existing = SessionParticipant.query.filter_by(
             session_id=user_session.id,
-            user_id=user_id,
-            is_active=True
+            user_id=user_id
         ).first()
     else:
         existing = SessionParticipant.query.filter_by(
             session_id=user_session.id,
-            guest_name=guest_name,
-            is_active=True
+            guest_name=guest_name
         ).first()
     
     if existing:
+        # Reactivate if they were inactive (rejoining)
+        if not existing.is_active:
+            existing.is_active = True
+            existing.joined_at = datetime.utcnow()  # Update join time
+            db.session.commit()
+            message = 'Rejoined session successfully'
+        else:
+            message = 'Already joined session'
+        
         session['participant_id'] = existing.id
         session['session_code'] = session_code
+        if guest_name:
+            session['guest_name'] = guest_name
+        
         return jsonify({
             'success': True,
-            'message': 'Already joined session',
-            'participant_id': existing.id
+            'message': message,
+            'participant_id': existing.id,
+            'session_name': user_session.session_name
         })
     
     # Add as new participant
@@ -611,6 +733,7 @@ def get_session_info():
             'id': user_session.id,
             'session_code': user_session.session_code,
             'session_name': user_session.session_name,
+            'location_name': user_session.location_name,
             'created_at': user_session.created_at.isoformat(),
             'creator_id': user_session.creator_id,
             'creator_name': creator.username if creator else None
@@ -632,6 +755,7 @@ def get_participant_info():
     return jsonify({
         'success': True,
         'participant_id': participant.id,
+        'user_id': participant.user_id,
         'name': name,
         'is_guest': participant.user_id is None
     })
@@ -711,6 +835,7 @@ def get_participants():
         
         participants_data.append({
             'id': p.id,
+            'user_id': p.user_id,
             'name': name,
             'is_guest': p.user_id is None,
             'latitude': latest_location.latitude if latest_location and is_online else None,
@@ -734,6 +859,54 @@ def stop_sharing():
         db.session.commit()
         
         return jsonify({'success': True, 'message': 'Stopped sharing location'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': 'Server error'}), 500
+
+@app.route('/api/remove_participant', methods=['POST'])
+def remove_participant():
+    """Remove a participant from a session (creator only)"""
+    if 'participant_id' not in session:
+        return jsonify({'success': False, 'message': 'Not authenticated'}), 401
+    
+    data = request.get_json()
+    participant_id_to_remove = data.get('participant_id')
+    
+    if not participant_id_to_remove:
+        return jsonify({'success': False, 'message': 'Participant ID required'}), 400
+    
+    # Get the current participant
+    current_participant = SessionParticipant.query.get(session['participant_id'])
+    if not current_participant:
+        return jsonify({'success': False, 'message': 'Not a participant'}), 401
+    
+    # Get the session
+    user_session = Session.query.get(current_participant.session_id)
+    if not user_session:
+        return jsonify({'success': False, 'message': 'Session not found'}), 404
+    
+    # Check if current user is the creator
+    if user_session.creator_id != current_participant.user_id:
+        return jsonify({'success': False, 'message': 'Only the session creator can remove participants'}), 403
+    
+    # Get the participant to remove
+    participant_to_remove = SessionParticipant.query.get(participant_id_to_remove)
+    if not participant_to_remove or participant_to_remove.session_id != user_session.id:
+        return jsonify({'success': False, 'message': 'Participant not found in this session'}), 404
+    
+    # Don't allow removing the creator
+    if participant_to_remove.user_id == user_session.creator_id:
+        return jsonify({'success': False, 'message': 'Cannot remove the session creator'}), 400
+    
+    try:
+        # Clear location data
+        Location.query.filter_by(participant_id=participant_id_to_remove).delete()
+        
+        # Mark participant as inactive
+        participant_to_remove.is_active = False
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': 'Participant removed successfully'})
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': 'Server error'}), 500
@@ -764,6 +937,136 @@ def leave_session():
             return jsonify({'success': False, 'message': 'Server error'}), 500
     
     return jsonify({'success': False, 'message': 'Participant not found'}), 404
+
+@app.route('/api/get_profile', methods=['GET'])
+def get_profile():
+    """Get user profile information"""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'message': 'Not authenticated'}), 401
+    
+    user = User.query.get(session['user_id'])
+    
+    if not user:
+        return jsonify({'success': False, 'message': 'User not found'}), 404
+    
+    return jsonify({
+        'success': True,
+        'user': {
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'profile_picture': user.profile_picture,
+            'auth_provider': user.auth_provider
+        }
+    })
+
+@app.route('/api/update_profile', methods=['POST'])
+def update_profile():
+    """Update user profile"""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'message': 'Not authenticated'}), 401
+    
+    data = request.get_json()
+    username = data.get('username')
+    
+    if not username or len(username) < 3:
+        return jsonify({'success': False, 'message': 'Username must be at least 3 characters'}), 400
+    
+    user = User.query.get(session['user_id'])
+    
+    if not user:
+        return jsonify({'success': False, 'message': 'User not found'}), 404
+    
+    # Check if username is already taken by another user
+    existing_user = User.query.filter_by(username=username).first()
+    if existing_user and existing_user.id != user.id:
+        return jsonify({'success': False, 'message': 'Username already taken'}), 400
+    
+    try:
+        user.username = username
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Profile updated successfully'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': 'Server error'}), 500
+
+@app.route('/api/upload_profile_picture', methods=['POST'])
+def upload_profile_picture():
+    """Upload profile picture"""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'message': 'Not authenticated'}), 401
+    
+    if 'profile_picture' not in request.files:
+        return jsonify({'success': False, 'message': 'No file provided'}), 400
+    
+    file = request.files['profile_picture']
+    
+    if file.filename == '':
+        return jsonify({'success': False, 'message': 'No file selected'}), 400
+    
+    # Validate file type
+    allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+    file_ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+    
+    if file_ext not in allowed_extensions:
+        return jsonify({'success': False, 'message': 'Invalid file type'}), 400
+    
+    user = User.query.get(session['user_id'])
+    
+    if not user:
+        return jsonify({'success': False, 'message': 'User not found'}), 404
+    
+    try:
+        # Create uploads directory if it doesn't exist
+        upload_dir = os.path.join(app.static_folder, 'uploads', 'profiles')
+        os.makedirs(upload_dir, exist_ok=True)
+        
+        # Generate unique filename
+        filename = f"{user.id}_{datetime.utcnow().timestamp()}.{file_ext}"
+        filepath = os.path.join(upload_dir, filename)
+        
+        # Save file
+        file.save(filepath)
+        
+        # Update user profile picture URL
+        profile_picture_url = f"/uploads/profiles/{filename}"
+        user.profile_picture = profile_picture_url
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Profile picture uploaded successfully',
+            'profile_picture_url': profile_picture_url
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': 'Server error'}), 500
+
+@app.route('/api/remove_profile_picture', methods=['POST'])
+def remove_profile_picture():
+    """Remove profile picture"""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'message': 'Not authenticated'}), 401
+    
+    user = User.query.get(session['user_id'])
+    
+    if not user:
+        return jsonify({'success': False, 'message': 'User not found'}), 404
+    
+    try:
+        # Delete file if it exists
+        if user.profile_picture:
+            filepath = os.path.join(app.static_folder, user.profile_picture.lstrip('/'))
+            if os.path.exists(filepath):
+                os.remove(filepath)
+        
+        user.profile_picture = None
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': 'Profile picture removed successfully'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': 'Server error'}), 500
 
 if __name__ == '__main__':
     with app.app_context():

@@ -45,7 +45,11 @@ async function loadSessions() {
             sessionsList.innerHTML = data.sessions.map(session => `
                 <div class="session-item">
                     <div class="session-details">
-                        <h4>${session.session_name}</h4>
+                        <h4>
+                            <span class="session-name-display" data-code="${session.session_code}">${session.session_name}</span>
+                            <button class="btn-icon" onclick="editSessionName('${session.session_code}', '${session.session_name.replace(/'/g, "\\'")}', event)" title="Edit name">✏️</button>
+                            ${session.location_name ? ` <span style="color: #8b5cf6; font-size: 0.9rem;">📍 ${session.location_name}</span>` : ''}
+                        </h4>
                         <p class="session-code">Code: ${session.session_code}</p>
                         <p class="session-meta">Created: ${new Date(session.created_at).toLocaleString()}</p>
                         <p class="session-meta">Participants: ${session.participant_count || 0}</p>
@@ -78,6 +82,11 @@ async function loadJoinedSessions() {
         
         if (data.success && data.sessions && data.sessions.length > 0) {
             console.log(`Found ${data.sessions.length} joined sessions`);
+            // Log each session for debugging
+            data.sessions.forEach(session => {
+                console.log(`  - ${session.session_name} (${session.session_code}): active=${session.user_is_active}`);
+            });
+            
             joinedSessionsList.innerHTML = data.sessions.map(session => {
                 const statusBadge = session.user_is_active
                     ? '<span style="color: #10b981; font-weight: bold;">● Active</span>'
@@ -86,7 +95,7 @@ async function loadJoinedSessions() {
                 return `
                     <div class="session-item">
                         <div class="session-details">
-                            <h4>${session.session_name} ${statusBadge}</h4>
+                            <h4>${session.session_name} ${statusBadge}${session.location_name ? ` <span style="color: #8b5cf6; font-size: 0.9rem;">📍 ${session.location_name}</span>` : ''}</h4>
                             <p class="session-code">Code: ${session.session_code}</p>
                             <p class="session-meta">Created by: ${session.creator_name}</p>
                             <p class="session-meta">Participants: ${session.participant_count || 0}</p>
@@ -100,7 +109,10 @@ async function loadJoinedSessions() {
                 `;
             }).join('');
         } else {
-            console.log('No joined sessions found');
+            console.log('No joined sessions found or empty response');
+            if (data.sessions) {
+                console.log('Sessions array is empty:', data.sessions);
+            }
             joinedSessionsList.innerHTML = '<p class="loading">No joined sessions. Join a session to see it here!</p>';
         }
     } catch (error) {
@@ -135,13 +147,38 @@ createSessionForm.addEventListener('submit', async (e) => {
     
     const sessionName = document.getElementById('session_name').value;
     
+    // Get user's location for reverse geocoding
+    let latitude = null;
+    let longitude = null;
+    
+    try {
+        if (navigator.geolocation) {
+            const position = await new Promise((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(resolve, reject, {
+                    enableHighAccuracy: false,
+                    timeout: 5000,
+                    maximumAge: 60000
+                });
+            });
+            latitude = position.coords.latitude;
+            longitude = position.coords.longitude;
+        }
+    } catch (geoError) {
+        console.log('Could not get location for session naming:', geoError);
+        // Continue without location - it's optional
+    }
+    
     try {
         const response = await fetch('/api/create_session', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ session_name: sessionName })
+            body: JSON.stringify({
+                session_name: sessionName,
+                latitude,
+                longitude
+            })
         });
         
         const data = await response.json();
@@ -163,6 +200,51 @@ createSessionForm.addEventListener('submit', async (e) => {
         console.error('Create session error:', error);
     }
 });
+
+// Edit session name function
+async function editSessionName(sessionCode, currentName, event) {
+    event.stopPropagation();
+    
+    const newName = prompt('Enter new session name:', currentName);
+    
+    if (!newName || newName === currentName) {
+        return;
+    }
+    
+    if (newName.length < 3) {
+        showMessage('Session name must be at least 3 characters', 'error');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/update_session_name', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                session_code: sessionCode,
+                session_name: newName
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showMessage('Session name updated successfully!', 'success');
+            // Update the display
+            const displayElement = document.querySelector(`.session-name-display[data-code="${sessionCode}"]`);
+            if (displayElement) {
+                displayElement.textContent = newName;
+            }
+        } else {
+            showMessage(data.message || 'Failed to update session name', 'error');
+        }
+    } catch (error) {
+        showMessage('An error occurred. Please try again.', 'error');
+        console.error('Update session name error:', error);
+    }
+}
 
 // End session function
 async function endSession(sessionCode) {

@@ -66,6 +66,7 @@ class NavigationMenu {
         if (this.isAuthenticated) {
             // Logged in user menu items
             items.push(`<li class="menu-user-info">👤 ${this.username}</li>`);
+            items.push('<li><a href="profile.html">✎ Edit Profile</a></li>');
             items.push('<li><a href="dashboard.html">📊 Dashboard</a></li>');
             items.push('<li><a href="history.html">📜 History</a></li>');
             items.push('<li><a href="join.html">🎯 Join Session</a></li>');

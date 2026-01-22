@@ -562,6 +562,19 @@ header h1 {
     border-radius: 8px;
     border-left: 4px solid var(--primary-color);
     transition: all 0.2s ease;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+}
+
+.participant-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.participant-item:not(.offline) .participant-info:hover {
+    cursor: pointer;
 }
 
 .participant-item:not(.offline):hover {
@@ -590,12 +603,186 @@ header h1 {
     color: var(--accent-color);
 }
 
+.participant-menu-container {
+    position: relative;
+}
+
+.participant-menu-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.5rem;
+    font-weight: bold;
+    cursor: pointer;
+    padding: 5px 10px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    line-height: 1;
+}
+
+.participant-menu-btn:hover {
+    background: rgba(100, 116, 139, 0.1);
+    color: var(--text-primary);
+}
+
+.participant-menu-dropdown {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    margin-top: 5px;
+    background: var(--card-background);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: var(--shadow-lg);
+    min-width: 160px;
+    z-index: 1000;
+    display: none;
+    overflow: hidden;
+}
+
+.participant-menu-dropdown.show {
+    display: block;
+}
+
+.menu-item {
+    width: 100%;
+    padding: 12px 16px;
+    border: none;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    transition: background 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.menu-item:hover {
+    background: var(--background);
+}
+
+.menu-item-danger {
+    color: var(--danger-color);
+}
+
+.menu-item-danger:hover {
+    background: rgba(239, 68, 68, 0.1);
+}
+
+/* Map Markers */
+.custom-marker {
+    background: transparent;
+    border: none;
+}
+
+.temporary-marker {
+    animation: fadeInOut 10s ease-in-out;
+}
+
+@keyframes fadeInOut {
+    0% {
+        opacity: 0;
+    }
+    10% {
+        opacity: 0.6;
+    }
+    90% {
+        opacity: 0.6;
+    }
+    100% {
+        opacity: 0;
+    }
+}
+
+/* Profile Page */
+.profile-container {
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+.profile-card {
+    background: var(--card-background);
+    padding: 30px;
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+}
+
+.profile-card h2 {
+    margin-bottom: 30px;
+    color: var(--primary-color);
+}
+
+.profile-picture-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 30px;
+    padding-bottom: 30px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.profile-picture-preview {
+    margin-bottom: 20px;
+}
+
+.profile-picture-preview img {
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 4px solid var(--primary-color);
+}
+
+.profile-picture-placeholder {
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 3rem;
+    font-weight: bold;
+    color: white;
+    border: 4px solid var(--primary-color);
+}
+
+.profile-picture-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.form-help {
+    display: block;
+    margin-top: 5px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
 /* Footer */
 footer {
     text-align: center;
     padding: 20px;
     color: var(--text-secondary);
     margin-top: 40px;
+}
+
+/* Edit Button Icon */
+.btn-icon {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 4px 8px;
+    margin-left: 8px;
+    border-radius: 4px;
+    transition: background 0.2s ease;
+}
+
+.btn-icon:hover {
+    background: rgba(37, 99, 235, 0.1);
 }
 
 /* Loading */

@@ -7,6 +7,11 @@ let sessionCode = null;
 let isSharing = false;
 let watchId = null;
 let updateInterval = null;
+let isCreator = false;
+let creatorId = null;
+let currentUserId = null;
+let temporaryMarker = null; // For showing offline user's last location
+let participantsData = []; // Store all participants data including offline ones
 
 // Get session code from URL
 const urlParams = new URLSearchParams(window.location.search);
@@ -53,8 +58,18 @@ async function loadSessionInfo() {
         const data = await response.json();
         
         if (data.success) {
-            document.getElementById('sessionName').textContent = data.session.session_name;
+            // Store session name for editing
+            window.currentSessionName = data.session.session_name;
+            
+            let sessionTitle = data.session.session_name;
+            if (data.session.location_name) {
+                sessionTitle += ` 📍 ${data.session.location_name}`;
+            }
+            document.getElementById('sessionName').textContent = sessionTitle;
             document.getElementById('sessionCode').textContent = sessionCode;
+            
+            // Store creator info
+            creatorId = data.session.creator_id;
             
             // Get participant info
             const participantResponse = await fetch('/api/get_participant_info');
@@ -62,7 +77,16 @@ async function loadSessionInfo() {
             
             if (participantData.success) {
                 participantId = participantData.participant_id;
+                currentUserId = participantData.user_id;
                 document.getElementById('participantName').textContent = participantData.name;
+                
+                // Check if current user is the creator
+                isCreator = (currentUserId && currentUserId === creatorId);
+                
+                // Show edit button for creator
+                if (isCreator) {
+                    document.getElementById('editSessionNameBtn').style.display = 'inline-block';
+                }
             } else {
                 // If not a participant yet, try to join automatically
                 // This handles the case when a logged-in user opens an existing session
@@ -269,6 +293,38 @@ async function loadParticipants() {
         const data = await response.json();
         
         if (data.success) {
+            // Store participants data for later use
+            participantsData = data.participants;
+            
+            // Check if current participant is still in the list
+            const stillInSession = data.participants.some(p => p.id === participantId);
+            
+            if (!stillInSession && participantId) {
+                // User was removed from the session
+                showMessage('You have been removed from this session', 'error');
+                
+                // Stop sharing location
+                if (isSharing) {
+                    stopSharing();
+                }
+                
+                // Redirect based on user type
+                setTimeout(async () => {
+                    const authResponse = await fetch('/api/check_auth');
+                    const authData = await authResponse.json();
+                    
+                    if (authData.authenticated) {
+                        // Redirect to dashboard if logged in
+                        window.location.href = 'dashboard.html';
+                    } else {
+                        // Redirect to homepage if guest
+                        window.location.href = 'index.html';
+                    }
+                }, 2000);
+                
+                return;
+            }
+            
             updateParticipantsList(data.participants);
             updateMapMarkers(data.participants);
         }
@@ -284,36 +340,245 @@ function updateParticipantsList(participants) {
     
     participantCount.textContent = participants.length;
     
+    console.log('Updating participants list. isCreator:', isCreator, 'creatorId:', creatorId);
+    
     participantsList.innerHTML = participants.map(p => {
         // Use is_online flag from server if available, otherwise check for coordinates
         const isOnline = p.is_online !== undefined ? p.is_online : (p.latitude && p.longitude);
         const lastUpdate = p.last_update ? new Date(p.last_update).toLocaleTimeString() : 'Never';
         
+        // Check if this participant can be removed (creator can remove others, but not themselves)
+        const canRemove = isCreator && p.user_id !== creatorId;
+        
+        console.log(`Participant ${p.name}: isOnline=${isOnline}, canRemove=${canRemove}, user_id=${p.user_id}`);
+        
+        // Check if offline user has last known location
+        const hasLastLocation = !isOnline && p.latitude && p.longitude;
+        
         return `
-            <div class="participant-item ${isOnline ? '' : 'offline'}" data-participant-id="${p.id}" style="cursor: ${isOnline ? 'pointer' : 'default'};">
-                <div class="participant-name">${p.name}</div>
-                <div class="participant-status ${isOnline ? 'online' : ''}">
-                    ${isOnline ? '🟢 Sharing Location' : '⚫ Offline'}
+            <div class="participant-item ${isOnline ? '' : 'offline'}" data-participant-id="${p.id}" style="cursor: ${(isOnline || hasLastLocation) ? 'pointer' : 'default'};">
+                <div class="participant-info">
+                    <div class="participant-name">${p.name}${p.user_id === creatorId ? ' 👑' : ''}</div>
+                    <div class="participant-status ${isOnline ? 'online' : ''}">
+                        ${isOnline ? '🟢 Sharing Location' : '⚫ Offline'}
+                    </div>
+                    <div class="participant-status">
+                        Last update: ${lastUpdate}
+                    </div>
+                    ${hasLastLocation ? '<div class="participant-status" style="font-size: 0.75rem; color: #8b5cf6;">📍 Click to see last location</div>' : ''}
                 </div>
-                <div class="participant-status">
-                    Last update: ${lastUpdate}
-                </div>
+                ${canRemove ? `
+                    <div class="participant-menu-container">
+                        <button class="participant-menu-btn" data-participant-id="${p.id}" title="Actions">⋮</button>
+                        <div class="participant-menu-dropdown" data-participant-id="${p.id}">
+                            <button class="menu-item menu-item-danger" data-action="remove" data-participant-id="${p.id}" data-participant-name="${p.name}">
+                                🗑️ Remove User
+                            </button>
+                        </div>
+                    </div>
+                ` : ''}
             </div>
         `;
     }).join('');
     
-    // Add click handlers to online participants
+    // Add click handlers to participants
     participants.forEach(p => {
         const isOnline = p.is_online !== undefined ? p.is_online : (p.latitude && p.longitude);
-        if (isOnline && p.latitude && p.longitude) {
-            const element = participantsList.querySelector(`[data-participant-id="${p.id}"]`);
-            if (element) {
-                element.addEventListener('click', () => {
+        const hasLastLocation = !isOnline && p.latitude && p.longitude;
+        const element = participantsList.querySelector(`[data-participant-id="${p.id}"]`);
+        
+        if (element) {
+            // Add click handler for online participants - center on their marker
+            if (isOnline && p.latitude && p.longitude) {
+                element.addEventListener('click', (e) => {
+                    // Don't trigger if clicking on menu button or menu items
+                    if (e.target.closest('.participant-menu-container')) {
+                        return;
+                    }
                     centerMapOnParticipant(p.id);
                 });
             }
+            
+            // Add click handler for offline participants with last location - show temporary marker
+            if (hasLastLocation) {
+                element.addEventListener('click', (e) => {
+                    // Don't trigger if clicking on menu button or menu items
+                    if (e.target.closest('.participant-menu-container')) {
+                        return;
+                    }
+                    showLastLocation(p);
+                });
+            }
+            
+            // Add click handler for menu button
+            const menuBtn = element.querySelector('.participant-menu-btn');
+            if (menuBtn) {
+                menuBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    toggleParticipantMenu(p.id);
+                });
+            }
+            
+            // Add click handlers for menu items
+            const menuItems = element.querySelectorAll('.menu-item');
+            menuItems.forEach(item => {
+                item.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const action = item.dataset.action;
+                    const participantId = item.dataset.participantId;
+                    const participantName = item.dataset.participantName;
+                    
+                    if (action === 'remove') {
+                        removeParticipant(participantId, participantName);
+                    }
+                    
+                    // Close all menus
+                    closeAllMenus();
+                });
+            });
         }
     });
+}
+
+// Toggle participant menu dropdown
+function toggleParticipantMenu(participantId) {
+    const dropdown = document.querySelector(`.participant-menu-dropdown[data-participant-id="${participantId}"]`);
+    
+    if (!dropdown) return;
+    
+    // Close all other menus first
+    closeAllMenus();
+    
+    // Toggle this menu
+    dropdown.classList.toggle('show');
+}
+
+// Close all participant menus
+function closeAllMenus() {
+    document.querySelectorAll('.participant-menu-dropdown').forEach(menu => {
+        menu.classList.remove('show');
+    });
+}
+
+// Close menus when clicking outside
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.participant-menu-container')) {
+        closeAllMenus();
+    }
+});
+
+// Show last known location for offline participant
+function showLastLocation(participant) {
+    if (!participant.latitude || !participant.longitude) {
+        showMessage('No location data available for this participant', 'error');
+        return;
+    }
+    
+    // Remove previous temporary marker if exists
+    if (temporaryMarker) {
+        map.removeLayer(temporaryMarker);
+    }
+    
+    const lat = parseFloat(participant.latitude);
+    const lng = parseFloat(participant.longitude);
+    
+    // Create a semi-transparent marker for last known location
+    const icon = L.divIcon({
+        className: 'custom-marker temporary-marker',
+        html: `
+            <div style="position: relative; text-align: center; opacity: 0.6;">
+                <div style="
+                    background: #64748b;
+                    color: white;
+                    padding: 8px 12px;
+                    border-radius: 20px;
+                    font-weight: bold;
+                    box-shadow: 0 3px 10px rgba(0,0,0,0.3);
+                    white-space: nowrap;
+                    font-size: 14px;
+                    border: 3px solid white;
+                ">${participant.name} (Last Location)</div>
+                <div style="
+                    width: 0;
+                    height: 0;
+                    border-left: 10px solid transparent;
+                    border-right: 10px solid transparent;
+                    border-top: 15px solid #64748b;
+                    margin: 0 auto;
+                    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3));
+                "></div>
+                <div style="
+                    width: 12px;
+                    height: 12px;
+                    background: #64748b;
+                    border: 3px solid white;
+                    border-radius: 50%;
+                    margin: -3px auto 0;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+                "></div>
+            </div>
+        `,
+        iconSize: [200, 80],
+        iconAnchor: [100, 80]
+    });
+    
+    const lastUpdate = participant.last_update ? new Date(participant.last_update).toLocaleString() : 'Unknown';
+    
+    temporaryMarker = L.marker([lat, lng], { icon })
+        .addTo(map)
+        .bindPopup(`
+            <b>${participant.name}</b><br>
+            <span style="color: #64748b;">Last known location</span><br>
+            Last update: ${lastUpdate}
+        `)
+        .openPopup();
+    
+    // Center map on the location
+    map.setView([lat, lng], 16);
+    
+    showMessage(`Showing last known location of ${participant.name}`, 'info');
+    
+    // Auto-remove temporary marker after 10 seconds
+    setTimeout(() => {
+        if (temporaryMarker) {
+            map.removeLayer(temporaryMarker);
+            temporaryMarker = null;
+        }
+    }, 10000);
+}
+
+// Remove participant (creator only)
+async function removeParticipant(participantId, participantName) {
+    if (!isCreator) {
+        showMessage('Only the session creator can remove participants', 'error');
+        return;
+    }
+    
+    if (!confirm(`Remove ${participantName} from the session?`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/remove_participant', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ participant_id: participantId })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showMessage(`${participantName} has been removed from the session`, 'success');
+            loadParticipants(); // Refresh the list
+        } else {
+            showMessage(data.message || 'Failed to remove participant', 'error');
+        }
+    } catch (error) {
+        console.error('Remove participant error:', error);
+        showMessage('Failed to remove participant', 'error');
+    }
 }
 
 // Update map markers
@@ -444,6 +709,47 @@ document.getElementById('toggleSharingBtn').addEventListener('click', () => {
 document.getElementById('copyCodeBtn').addEventListener('click', () => {
     navigator.clipboard.writeText(sessionCode);
     showMessage('Session code copied to clipboard!', 'success');
+});
+
+// Edit session name
+document.getElementById('editSessionNameBtn').addEventListener('click', async () => {
+    const newName = prompt('Enter new session name:', window.currentSessionName);
+    
+    if (!newName || newName === window.currentSessionName) {
+        return;
+    }
+    
+    if (newName.length < 3) {
+        showMessage('Session name must be at least 3 characters', 'error');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/update_session_name', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                session_code: sessionCode,
+                session_name: newName
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showMessage('Session name updated successfully!', 'success');
+            window.currentSessionName = newName;
+            // Reload session info to update display
+            loadSessionInfo();
+        } else {
+            showMessage(data.message || 'Failed to update session name', 'error');
+        }
+    } catch (error) {
+        showMessage('Failed to update session name', 'error');
+        console.error('Update session name error:', error);
+    }
 });
 
 // Leave session
