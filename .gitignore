@@ -51,6 +51,11 @@ hunt_planur.db
 # Logs
 *.log
 
+# SSL Certificates (self-signed for development)
+*.pem
+cert.pem
+key.pem
+
 # Legacy PHP files
 api/
 config/database.php

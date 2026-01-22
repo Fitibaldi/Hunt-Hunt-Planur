@@ -16,18 +16,19 @@ A real-time location sharing web application built with Flask (Python), HTML, CS
 
 - **Frontend**: HTML5, CSS3, JavaScript
 - **Backend**: Flask (Python 3.8+)
-- **Database**: MySQL/MariaDB with SQLAlchemy ORM
+- **Database**: SQLite with SQLAlchemy ORM (no server needed!)
 - **Map Library**: Leaflet.js
 - **Map Tiles**: OpenStreetMap
+- **SSL/TLS**: pyOpenSSL for HTTPS support
 
 ## Installation
 
 ### Prerequisites
 
 - Python 3.8 or higher
-- MySQL 5.7+ or MariaDB 10.3+
 - pip (Python package manager)
 - Modern web browser with geolocation support
+- Network access for devices that need to connect
 
 ### Setup Instructions
 
@@ -52,52 +53,35 @@ A real-time location sharing web application built with Flask (Python), HTML, CS
    pip install -r requirements.txt
    ```
 
-4. **Create the database**
-   - Open your MySQL/MariaDB client
-   - Create the database:
-   ```sql
-   CREATE DATABASE hunt_planur;
+4. **Generate SSL Certificate (Required for Geolocation)**
+   ```bash
+   python generate_cert.py
    ```
    
-   Alternatively, run the SQL script:
-   ```bash
-   mysql -u root -p < database/schema.sql
-   ```
-
-5. **Configure database connection**
-   - Edit [`config.py`](config.py) or set environment variables:
-   ```bash
-   # Windows
-   set DB_HOST=localhost
-   set DB_USER=root
-   set DB_PASSWORD=your_password
-   set DB_NAME=hunt_planur
+   This creates self-signed SSL certificates needed for the Geolocation API to work on non-localhost connections.
    
-   # macOS/Linux
-   export DB_HOST=localhost
-   export DB_USER=root
-   export DB_PASSWORD=your_password
-   export DB_NAME=hunt_planur
-   ```
+   📖 **See [HTTPS_SETUP.md](HTTPS_SETUP.md) for detailed HTTPS configuration guide**
 
-6. **Initialize the database tables**
-   ```bash
-   python
-   >>> from app import app, db
-   >>> with app.app_context():
-   ...     db.create_all()
-   >>> exit()
-   ```
-
-7. **Start the Flask server**
+5. **Start the Flask server**
    ```bash
    python app.py
    ```
    
-   The server will start on `http://localhost:5000`
+   The server will automatically:
+   - Create the SQLite database if it doesn't exist
+   - Detect SSL certificates and enable HTTPS
+   - Start on `https://0.0.0.0:5000` (accessible from network)
 
-8. **Access the application**
-   - Open your browser and navigate to: `http://localhost:5000`
+6. **Access the application**
+   
+   **From the host machine:**
+   - `https://localhost:5000/`
+   - `https://192.168.1.197:5000/` (use your actual IP)
+   
+   **From other devices on the network:**
+   - `https://192.168.1.197:5000/` (use the host machine's IP)
+   
+   ⚠️ **Note**: You'll see a security warning because of the self-signed certificate. Click "Advanced" and "Proceed" to continue.
 
 ## Usage
 
@@ -216,7 +200,44 @@ Hunt-Hunt-Planur/
 - Edge 14+
 - Opera 37+
 
-**Note**: Geolocation API requires HTTPS in production (except localhost)
+**Note**: Geolocation API requires HTTPS for non-localhost connections. See [HTTPS_SETUP.md](HTTPS_SETUP.md) for setup instructions.
+
+## Network Access Setup
+
+### Finding Your IP Address
+
+**Windows:**
+```bash
+ipconfig
+```
+Look for "IPv4 Address" under your active network adapter (usually starts with 192.168.x.x)
+
+**macOS/Linux:**
+```bash
+ifconfig
+# or
+ip addr show
+```
+
+### Firewall Configuration
+
+If other devices can't connect, you may need to allow port 5000:
+
+**Windows Firewall:**
+```bash
+netsh advfirewall firewall add rule name="Flask App" dir=in action=allow protocol=TCP localport=5000
+```
+
+**macOS:**
+```bash
+# System Preferences > Security & Privacy > Firewall > Firewall Options
+# Add Python and allow incoming connections
+```
+
+**Linux (ufw):**
+```bash
+sudo ufw allow 5000/tcp
+```
 
 ## Configuration
 
@@ -224,11 +245,8 @@ Hunt-Hunt-Planur/
 
 You can configure the application using environment variables:
 
-- `SECRET_KEY` - Flask secret key for sessions
-- `DB_HOST` - Database host (default: localhost)
-- `DB_USER` - Database username (default: root)
-- `DB_PASSWORD` - Database password (default: empty)
-- `DB_NAME` - Database name (default: hunt_planur)
+- `SECRET_KEY` - Flask secret key for sessions (default: dev-secret-key-change-in-production)
+- `DATABASE_URL` - Database connection string (default: SQLite)
 
 ### Configuration File
 
@@ -240,17 +258,40 @@ Edit [`config.py`](config.py) to change:
 
 ## Troubleshooting
 
+### "Only secure origins are allowed" Error
+- This means you're accessing via HTTP instead of HTTPS
+- **Solution**: Generate SSL certificates and restart the server
+  ```bash
+  python generate_cert.py
+  python app.py
+  ```
+- Access via `https://` not `http://`
+- See [HTTPS_SETUP.md](HTTPS_SETUP.md) for detailed instructions
+
 ### Location not updating
 - Ensure browser has location permission
-- Check if HTTPS is enabled (required for production)
+- Check if HTTPS is enabled (required for non-localhost)
 - Verify JavaScript console for errors
 - Check Flask server logs
+- Try accessing from `https://` URL
 
-### Database connection errors
-- Verify database credentials in [`config.py`](config.py)
-- Ensure MySQL/MariaDB service is running
-- Check database exists: `SHOW DATABASES;`
-- Verify PyMySQL is installed: `pip install PyMySQL`
+### Certificate/SSL Warnings
+- Self-signed certificates will show security warnings
+- Click "Advanced" → "Proceed to site (unsafe)"
+- This is normal for development
+- See [HTTPS_SETUP.md](HTTPS_SETUP.md) for mobile device instructions
+
+### Can't connect from other devices
+- Verify both devices are on the same WiFi network
+- Check firewall settings (see Network Access Setup above)
+- Confirm you're using the correct IP address
+- Ensure you're using `https://` not `http://`
+- Try accessing from the host machine first
+
+### Database errors
+- The app uses SQLite by default (no setup needed)
+- Database file is created automatically as `hunt_planur.db`
+- If you see database errors, delete `hunt_planur.db` and restart
 
 ### Session not found
 - Verify session code is correct (case-sensitive)
@@ -302,8 +343,8 @@ gunicorn -w 4 -b 0.0.0.0:5000 app:app
 - **Flask** - Web framework
 - **Flask-SQLAlchemy** - ORM for database operations
 - **Flask-CORS** - Cross-Origin Resource Sharing
-- **PyMySQL** - MySQL database driver
 - **Werkzeug** - Password hashing and security utilities
+- **pyOpenSSL** - SSL/TLS support for HTTPS
 
 See [`requirements.txt`](requirements.txt) for complete list with versions.
 

@@ -493,6 +493,41 @@ def leave_session():
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-    # Use 0.0.0.0 to allow access from other devices on the network
-    # Note: Geolocation may require HTTPS on non-localhost connections
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    
+    # Check if SSL certificates exist
+    import os
+    cert_file = 'cert.pem'
+    key_file = 'key.pem'
+    
+    if os.path.exists(cert_file) and os.path.exists(key_file):
+        print("=" * 60)
+        print("🔒 Starting server with HTTPS (SSL enabled)")
+        print("=" * 60)
+        print(f"Server running at: https://192.168.1.197:5000/")
+        print(f"Local access: https://localhost:5000/")
+        print("\n⚠️  IMPORTANT:")
+        print("   - Your browser will show a security warning")
+        print("   - Click 'Advanced' and 'Proceed' to accept the certificate")
+        print("   - This is normal for self-signed certificates")
+        print("=" * 60)
+        
+        # Run with SSL context
+        app.run(
+            debug=True,
+            host='0.0.0.0',
+            port=5000,
+            ssl_context=(cert_file, key_file)
+        )
+    else:
+        print("=" * 60)
+        print("⚠️  WARNING: Running without HTTPS")
+        print("=" * 60)
+        print("Geolocation API requires HTTPS for non-localhost connections.")
+        print(f"\nTo enable HTTPS:")
+        print(f"1. Install pyOpenSSL: pip install pyOpenSSL")
+        print(f"2. Run: python generate_cert.py")
+        print(f"3. Restart the server")
+        print("=" * 60)
+        
+        # Run without SSL
+        app.run(debug=True, host='0.0.0.0', port=5000)
