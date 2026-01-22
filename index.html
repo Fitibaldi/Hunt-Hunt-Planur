@@ -11,6 +11,13 @@
         <header>
             <h1>🗺️ Hunt-Hunt-Planur</h1>
             <p class="tagline">Share your location in real-time with friends</p>
+            <!-- User info section (shown when logged in) -->
+            <div id="userInfo" style="display: none; margin-top: 10px;">
+                <p style="color: #10b981; font-weight: bold;">
+                    👤 Logged in as: <span id="username"></span>
+                    <button id="logoutBtn" class="btn btn-secondary" style="margin-left: 10px; padding: 5px 15px; font-size: 14px;">Logout</button>
+                </p>
+            </div>
         </header>
 
         <main class="home-content">
@@ -20,14 +27,24 @@
             </div>
 
             <div class="action-cards">
-                <div class="card">
-                    <div class="card-icon">🔐</div>
+                <!-- Dashboard card (only shown when logged in) -->
+                <div class="card" id="dashboardCard" style="display: none;">
+                    <div class="card-icon">📊</div>
+                    <h3>Dashboard</h3>
+                    <p>Manage your sessions and create new ones</p>
+                    <a href="dashboard.html" class="btn btn-primary">Go to Dashboard</a>
+                </div>
+
+                <!-- Login card (hidden when logged in) -->
+                <div class="card" id="loginCard">
+                    <div class="card-icon"></div>
                     <h3>Login</h3>
                     <p>Access your account to create and manage sessions</p>
                     <a href="login.html" class="btn btn-primary">Login</a>
                 </div>
 
-                <div class="card">
+                <!-- Register card (hidden when logged in) -->
+                <div class="card" id="registerCard">
                     <div class="card-icon">📝</div>
                     <h3>Register</h3>
                     <p>Create a new account to get started</p>
@@ -58,5 +75,52 @@
             <p>&copy; 2026 Hunt-Hunt-Planur. Real-time location sharing made easy.</p>
         </footer>
     </div>
+
+    <script>
+        // Check authentication status on page load
+        async function checkAuth() {
+            try {
+                const response = await fetch('/api/check_auth');
+                const data = await response.json();
+                
+                if (data.authenticated) {
+                    // User is logged in - show dashboard, hide login/register
+                    document.getElementById('userInfo').style.display = 'block';
+                    document.getElementById('username').textContent = data.username;
+                    document.getElementById('dashboardCard').style.display = 'block';
+                    document.getElementById('loginCard').style.display = 'none';
+                    document.getElementById('registerCard').style.display = 'none';
+                } else {
+                    // User is not logged in - show login/register, hide dashboard
+                    document.getElementById('userInfo').style.display = 'none';
+                    document.getElementById('dashboardCard').style.display = 'none';
+                    document.getElementById('loginCard').style.display = 'block';
+                    document.getElementById('registerCard').style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Auth check error:', error);
+                // On error, show login/register options
+                document.getElementById('userInfo').style.display = 'none';
+                document.getElementById('dashboardCard').style.display = 'none';
+                document.getElementById('loginCard').style.display = 'block';
+                document.getElementById('registerCard').style.display = 'block';
+            }
+        }
+
+        // Logout functionality
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            try {
+                await fetch('/api/logout', { method: 'POST' });
+                // Reload page to update UI
+                window.location.reload();
+            } catch (error) {
+                console.error('Logout error:', error);
+                alert('Failed to logout. Please try again.');
+            }
+        });
+
+        // Check auth on page load
+        checkAuth();
+    </script>
 </body>
 </html>

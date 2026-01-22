@@ -266,7 +266,8 @@ Edit [`config.py`](config.py) to change:
   python app.py
   ```
 - Access via `https://` not `http://`
-- See [HTTPS_SETUP.md](HTTPS_SETUP.md) for detailed instructions
+- **📖 See [GEOLOCATION_FIX.md](GEOLOCATION_FIX.md) for complete step-by-step fix guide**
+- Also see [HTTPS_SETUP.md](HTTPS_SETUP.md) for detailed HTTPS configuration
 
 ### Location not updating
 - Ensure browser has location permission

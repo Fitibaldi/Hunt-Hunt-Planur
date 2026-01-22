@@ -19,12 +19,19 @@ if (!sessionCode) {
 
 // Initialize map
 function initMap() {
-    map = L.map('map').setView([42.6977, 23.3219], 13); // Default to Sofia, Bulgaria
-    
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors',
-        maxZoom: 19
-    }).addTo(map);
+    try {
+        map = L.map('map').setView([42.6977, 23.3219], 13); // Default to Sofia, Bulgaria
+        
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 19
+        }).addTo(map);
+        
+        console.log('Map initialized successfully');
+    } catch (error) {
+        console.error('Map initialization error:', error);
+        showMessage('Failed to initialize map', 'error');
+    }
 }
 
 // Show message function
@@ -56,6 +63,34 @@ async function loadSessionInfo() {
             if (participantData.success) {
                 participantId = participantData.participant_id;
                 document.getElementById('participantName').textContent = participantData.name;
+            } else {
+                // If not a participant yet, try to join automatically
+                // This handles the case when a logged-in user opens an existing session
+                const authResponse = await fetch('/api/check_auth');
+                const authData = await authResponse.json();
+                
+                if (authData.authenticated) {
+                    // User is logged in, join the session automatically
+                    const joinResponse = await fetch('/api/join_session', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ session_code: sessionCode })
+                    });
+                    
+                    const joinData = await joinResponse.json();
+                    
+                    if (joinData.success) {
+                        participantId = joinData.participant_id;
+                        // Reload participant info to get the name
+                        const newParticipantResponse = await fetch('/api/get_participant_info');
+                        const newParticipantData = await newParticipantResponse.json();
+                        if (newParticipantData.success) {
+                            document.getElementById('participantName').textContent = newParticipantData.name;
+                        }
+                    }
+                }
             }
         } else {
             showMessage('Session not found', 'error');
@@ -80,13 +115,19 @@ function getCurrentLocation() {
         navigator.geolocation.getCurrentPosition(
             position => resolve(position),
             error => reject(error),
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 }
         );
     });
 }
 
 // Start sharing location
 async function startSharing() {
+    // Check if using HTTPS (required for geolocation on remote devices)
+    if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+        showMessage('⚠️ Geolocation requires HTTPS! Please access this page using https:// instead of http://', 'error');
+        return;
+    }
+    
     if (!navigator.geolocation) {
         showMessage('Geolocation is not supported by your browser', 'error');
         return;
@@ -106,7 +147,11 @@ async function startSharing() {
         watchId = navigator.geolocation.watchPosition(
             updateLocation,
             handleLocationError,
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            {
+                enableHighAccuracy: true,
+                timeout: 60000,  // 60 seconds - longer timeout to prevent premature stopping
+                maximumAge: 5000  // Allow cached position up to 5 seconds old
+            }
         );
         
         // Center map on user
@@ -169,20 +214,40 @@ async function updateLocation(position) {
 // Handle location errors
 function handleLocationError(error) {
     let message = 'Location error: ';
+    let shouldStopSharing = false;
+    
     switch(error.code) {
         case error.PERMISSION_DENIED:
             message += 'Permission denied';
+            // Check if it's due to insecure origin
+            if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+                message = 'Geolocation requires HTTPS. Please access via https:// instead of http://';
+            }
+            shouldStopSharing = true; // Stop on permission denied
             break;
         case error.POSITION_UNAVAILABLE:
-            message += 'Position unavailable';
+            message += 'Position temporarily unavailable, retrying...';
+            console.warn('Position unavailable, will retry');
+            // Don't stop sharing, just log the error
             break;
         case error.TIMEOUT:
-            message += 'Request timeout';
+            message += 'Location request timeout, retrying...';
+            console.warn('Geolocation timeout, will retry');
+            // Don't stop sharing on timeout, watchPosition will retry automatically
             break;
         default:
             message += 'Unknown error';
+            console.error('Unknown geolocation error:', error);
     }
-    showMessage(message, 'error');
+    
+    // Only show error message for critical errors
+    if (shouldStopSharing) {
+        showMessage(message, 'error');
+        stopSharing();
+    } else {
+        // Just log non-critical errors to console
+        console.log(message);
+    }
 }
 
 // Load all participants and their locations
@@ -227,6 +292,13 @@ function updateParticipantsList(participants) {
 
 // Update map markers
 function updateMapMarkers(participants) {
+    console.log('Updating map markers for participants:', participants);
+    
+    if (!map) {
+        console.error('Map not initialized yet');
+        return;
+    }
+    
     // Remove old markers
     Object.keys(markers).forEach(id => {
         if (!participants.find(p => p.id == id)) {
@@ -237,9 +309,13 @@ function updateMapMarkers(participants) {
     
     // Add/update markers
     participants.forEach(participant => {
+        console.log(`Participant ${participant.name}: lat=${participant.latitude}, lng=${participant.longitude}`);
+        
         if (participant.latitude && participant.longitude) {
             const lat = parseFloat(participant.latitude);
             const lng = parseFloat(participant.longitude);
+            
+            console.log(`Adding/updating marker for ${participant.name} at [${lat}, ${lng}]`);
             
             if (markers[participant.id]) {
                 // Update existing marker
@@ -338,11 +414,23 @@ document.getElementById('leaveSessionBtn').addEventListener('click', async () =>
             },
             body: JSON.stringify({ session_code: sessionCode })
         });
+        
+        // Check if user is logged in to determine redirect
+        const authResponse = await fetch('/api/check_auth');
+        const authData = await authResponse.json();
+        
+        if (authData.authenticated) {
+            // Redirect to dashboard if logged in
+            window.location.href = 'dashboard.html';
+        } else {
+            // Redirect to homepage if not logged in (guest)
+            window.location.href = 'index.html';
+        }
     } catch (error) {
         console.error('Leave session error:', error);
+        // Default to homepage on error
+        window.location.href = 'index.html';
     }
-    
-    window.location.href = 'index.html';
 });
 
 // Initialize

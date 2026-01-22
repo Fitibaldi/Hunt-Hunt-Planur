@@ -33,7 +33,7 @@ function showMessage(message, type = 'info') {
     }, 5000);
 }
 
-// Load user sessions
+// Load user created sessions
 async function loadSessions() {
     try {
         const response = await fetch('/api/get_sessions');
@@ -57,11 +57,55 @@ async function loadSessions() {
                 </div>
             `).join('');
         } else {
-            sessionsList.innerHTML = '<p class="loading">No active sessions. Create one to get started!</p>';
+            sessionsList.innerHTML = '<p class="loading">No created sessions. Create one to get started!</p>';
         }
     } catch (error) {
         console.error('Load sessions error:', error);
         showMessage('Failed to load sessions', 'error');
+    }
+}
+
+// Load joined sessions
+async function loadJoinedSessions() {
+    try {
+        console.log('Fetching joined sessions...');
+        const response = await fetch('/api/get_joined_sessions');
+        const data = await response.json();
+        
+        console.log('Joined sessions response:', data);
+        
+        const joinedSessionsList = document.getElementById('joinedSessionsList');
+        
+        if (data.success && data.sessions && data.sessions.length > 0) {
+            console.log(`Found ${data.sessions.length} joined sessions`);
+            joinedSessionsList.innerHTML = data.sessions.map(session => {
+                const statusBadge = session.user_is_active
+                    ? '<span style="color: #10b981; font-weight: bold;">● Active</span>'
+                    : '<span style="color: #64748b; font-weight: bold;">○ Left</span>';
+                
+                return `
+                    <div class="session-item">
+                        <div class="session-details">
+                            <h4>${session.session_name} ${statusBadge}</h4>
+                            <p class="session-code">Code: ${session.session_code}</p>
+                            <p class="session-meta">Created by: ${session.creator_name}</p>
+                            <p class="session-meta">Participants: ${session.participant_count || 0}</p>
+                        </div>
+                        <div class="session-actions">
+                            <a href="session.html?code=${session.session_code}" class="btn btn-primary btn-small">
+                                ${session.user_is_active ? 'Open' : 'Rejoin'}
+                            </a>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        } else {
+            console.log('No joined sessions found');
+            joinedSessionsList.innerHTML = '<p class="loading">No joined sessions. Join a session to see it here!</p>';
+        }
+    } catch (error) {
+        console.error('Load joined sessions error:', error);
+        showMessage('Failed to load joined sessions', 'error');
     }
 }
 
@@ -159,5 +203,6 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
 checkAuth().then(authenticated => {
     if (authenticated) {
         loadSessions();
+        loadJoinedSessions();
     }
 });

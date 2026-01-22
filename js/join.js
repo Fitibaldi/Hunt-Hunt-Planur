@@ -1,5 +1,7 @@
 // Join Session JavaScript
 
+let isLoggedIn = false;
+
 // Show message function
 function showMessage(message, type = 'info') {
     const messageDiv = document.getElementById('message');
@@ -12,14 +14,55 @@ function showMessage(message, type = 'info') {
     }, 5000);
 }
 
+// Check if user is logged in
+async function checkAuth() {
+    try {
+        const response = await fetch('/api/check_auth');
+        const data = await response.json();
+        
+        if (data.authenticated) {
+            isLoggedIn = true;
+            // Show user info
+            document.getElementById('userInfo').style.display = 'block';
+            document.getElementById('username').textContent = data.username;
+            // Hide guest name field
+            document.getElementById('guestNameGroup').style.display = 'none';
+            document.getElementById('guest_name').removeAttribute('required');
+            // Update subtitle
+            document.getElementById('subtitle').textContent = 'Enter session code to join as ' + data.username;
+        } else {
+            isLoggedIn = false;
+            // Show guest name field
+            document.getElementById('userInfo').style.display = 'none';
+            document.getElementById('guestNameGroup').style.display = 'block';
+            document.getElementById('guest_name').setAttribute('required', 'required');
+            // Update subtitle
+            document.getElementById('subtitle').textContent = 'Enter session code to join as a guest';
+        }
+    } catch (error) {
+        console.error('Auth check error:', error);
+        isLoggedIn = false;
+    }
+}
+
 // Join Form Handler
 const joinForm = document.getElementById('joinForm');
 if (joinForm) {
     joinForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         
-        const guestName = document.getElementById('guest_name').value;
         const sessionCode = document.getElementById('session_code').value.toUpperCase();
+        const requestBody = { session_code: sessionCode };
+        
+        // Only include guest_name if user is not logged in
+        if (!isLoggedIn) {
+            const guestName = document.getElementById('guest_name').value;
+            if (!guestName) {
+                showMessage('Please enter your name', 'error');
+                return;
+            }
+            requestBody.guest_name = guestName;
+        }
         
         try {
             const response = await fetch('/api/join_session', {
@@ -27,7 +70,7 @@ if (joinForm) {
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ guest_name: guestName, session_code: sessionCode })
+                body: JSON.stringify(requestBody)
             });
             
             const data = await response.json();
@@ -54,3 +97,6 @@ if (sessionCodeInput) {
         e.target.value = e.target.value.toUpperCase();
     });
 }
+
+// Check authentication on page load
+checkAuth();

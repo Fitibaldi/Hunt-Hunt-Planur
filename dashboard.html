@@ -19,7 +19,10 @@
         <main class="dashboard-content">
             <div class="dashboard-header">
                 <h2>Dashboard</h2>
-                <button id="createSessionBtn" class="btn btn-primary">+ Create New Session</button>
+                <div style="display: flex; gap: 10px;">
+                    <button id="createSessionBtn" class="btn btn-primary">+ Create New Session</button>
+                    <a href="join.html" class="btn btn-secondary">Join Session</a>
+                </div>
             </div>
 
             <div id="message" class="message"></div>
@@ -39,10 +42,18 @@
                 </div>
             </div>
 
-            <!-- Active Sessions -->
+            <!-- Created Sessions -->
             <div class="sessions-section">
-                <h3>Your Active Sessions</h3>
+                <h3>Your Created Sessions</h3>
                 <div id="sessionsList" class="sessions-list">
+                    <p class="loading">Loading sessions...</p>
+                </div>
+            </div>
+
+            <!-- Joined Sessions -->
+            <div class="sessions-section">
+                <h3>Sessions You've Joined</h3>
+                <div id="joinedSessionsList" class="sessions-list">
                     <p class="loading">Loading sessions...</p>
                 </div>
             </div>

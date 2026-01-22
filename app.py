@@ -210,6 +210,10 @@ def create_session():
         db.session.add(participant)
         db.session.commit()
         
+        # Store participant_id and session_code in session for later use
+        session['participant_id'] = participant.id
+        session['session_code'] = session_code
+        
         return jsonify({
             'success': True,
             'message': 'Session created successfully',
@@ -246,7 +250,54 @@ def get_sessions():
             'session_name': s.session_name,
             'created_at': s.created_at.isoformat(),
             'is_active': s.is_active,
-            'participant_count': participant_count
+            'participant_count': participant_count,
+            'is_creator': True
+        })
+    
+    return jsonify({'success': True, 'sessions': sessions_data})
+
+@app.route('/api/get_joined_sessions', methods=['GET'])
+def get_joined_sessions():
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'message': 'Not authenticated'}), 401
+    
+    # Get sessions where user has been a participant (even if they left)
+    # Show all active sessions they've joined, regardless of their current participation status
+    joined_sessions = db.session.query(Session).join(
+        SessionParticipant, Session.id == SessionParticipant.session_id
+    ).filter(
+        SessionParticipant.user_id == session['user_id'],
+        # Removed is_active check for participant - show even if they left
+        Session.is_active == True,  # Only show if session is still active
+        Session.creator_id != session['user_id']  # Not the creator
+    ).distinct().order_by(Session.created_at.desc()).all()
+    
+    print(f"DEBUG: User {session['user_id']} has joined {len(joined_sessions)} sessions")
+    
+    sessions_data = []
+    for s in joined_sessions:
+        creator = User.query.get(s.creator_id)
+        participant_count = SessionParticipant.query.filter_by(
+            session_id=s.id,
+            is_active=True
+        ).count()
+        
+        # Check if user is currently active in this session
+        user_participant = SessionParticipant.query.filter_by(
+            session_id=s.id,
+            user_id=session['user_id']
+        ).first()
+        
+        sessions_data.append({
+            'id': s.id,
+            'session_code': s.session_code,
+            'session_name': s.session_name,
+            'created_at': s.created_at.isoformat(),
+            'is_active': s.is_active,
+            'participant_count': participant_count,
+            'is_creator': False,
+            'creator_name': creator.username if creator else 'Unknown',
+            'user_is_active': user_participant.is_active if user_participant else False
         })
     
     return jsonify({'success': True, 'sessions': sessions_data})
@@ -496,6 +547,20 @@ if __name__ == '__main__':
     
     # Check if SSL certificates exist
     import os
+    import socket
+    
+    def get_local_ip():
+        """Get the local IP address of this machine"""
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            s.close()
+            return local_ip
+        except Exception:
+            return "127.0.0.1"
+    
+    local_ip = get_local_ip()
     cert_file = 'cert.pem'
     key_file = 'key.pem'
     
@@ -503,12 +568,13 @@ if __name__ == '__main__':
         print("=" * 60)
         print("🔒 Starting server with HTTPS (SSL enabled)")
         print("=" * 60)
-        print(f"Server running at: https://192.168.1.197:5000/")
+        print(f"Server running at: https://{local_ip}:5000/")
         print(f"Local access: https://localhost:5000/")
         print("\n⚠️  IMPORTANT:")
         print("   - Your browser will show a security warning")
         print("   - Click 'Advanced' and 'Proceed' to accept the certificate")
         print("   - This is normal for self-signed certificates")
+        print("   - On mobile devices, you must accept the certificate warning")
         print("=" * 60)
         
         # Run with SSL context
@@ -527,6 +593,7 @@ if __name__ == '__main__':
         print(f"1. Install pyOpenSSL: pip install pyOpenSSL")
         print(f"2. Run: python generate_cert.py")
         print(f"3. Restart the server")
+        print(f"\nYour local IP is: {local_ip}")
         print("=" * 60)
         
         # Run without SSL
