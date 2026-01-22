@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Session - Hunt-Hunt-Planur</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+</head>
+<body>
+    <div class="session-container">
+        <header class="session-header">
+            <div class="session-info">
+                <h1>🗺️ <span id="sessionName">Session</span></h1>
+                <div class="session-code-display">
+                    Code: <strong id="sessionCode"></strong>
+                    <button id="copyCodeBtn" class="btn btn-small">Copy</button>
+                </div>
+            </div>
+            <div class="header-actions">
+                <span id="participantName" class="user-display"></span>
+                <button id="leaveSessionBtn" class="btn btn-small btn-danger">Leave Session</button>
+            </div>
+        </header>
+
+        <div class="session-layout">
+            <!-- Map Container -->
+            <div class="map-container">
+                <div id="map"></div>
+                <div class="map-controls">
+                    <button id="centerMapBtn" class="btn btn-small">📍 Center on Me</button>
+                    <button id="toggleSharingBtn" class="btn btn-small btn-primary">Share Location</button>
+                </div>
+            </div>
+
+            <!-- Participants Sidebar -->
+            <div class="participants-sidebar">
+                <h3>Participants (<span id="participantCount">0</span>)</h3>
+                <div id="participantsList" class="participants-list"></div>
+            </div>
+        </div>
+
+        <div id="message" class="message"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="js/session.js"></script>
+</body>
+</html>

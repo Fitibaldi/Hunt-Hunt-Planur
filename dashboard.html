@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Hunt-Hunt-Planur</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🗺️ Hunt-Hunt-Planur</h1>
+            <div class="header-actions">
+                <span id="userDisplay" class="user-display"></span>
+                <button id="logoutBtn" class="btn btn-small">Logout</button>
+            </div>
+        </header>
+
+        <main class="dashboard-content">
+            <div class="dashboard-header">
+                <h2>Dashboard</h2>
+                <button id="createSessionBtn" class="btn btn-primary">+ Create New Session</button>
+            </div>
+
+            <div id="message" class="message"></div>
+
+            <!-- Create Session Modal -->
+            <div id="createSessionModal" class="modal">
+                <div class="modal-content">
+                    <span class="close">&times;</span>
+                    <h3>Create New Session</h3>
+                    <form id="createSessionForm">
+                        <div class="form-group">
+                            <label for="session_name">Session Name</label>
+                            <input type="text" id="session_name" name="session_name" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Create Session</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Active Sessions -->
+            <div class="sessions-section">
+                <h3>Your Active Sessions</h3>
+                <div id="sessionsList" class="sessions-list">
+                    <p class="loading">Loading sessions...</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="js/dashboard.js"></script>
+</body>
+</html>
