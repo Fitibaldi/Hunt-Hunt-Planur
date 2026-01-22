@@ -302,6 +302,117 @@ def get_joined_sessions():
     
     return jsonify({'success': True, 'sessions': sessions_data})
 
+@app.route('/api/get_all_sessions_history', methods=['GET'])
+def get_all_sessions_history():
+    """Get all sessions (created and joined) for the logged-in user, including ended ones"""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'message': 'Not authenticated'}), 401
+    
+    # Get all sessions created by user
+    created_sessions = Session.query.filter_by(
+        creator_id=session['user_id']
+    ).order_by(Session.created_at.desc()).all()
+    
+    # Get all sessions joined by user (including ended ones)
+    joined_sessions = db.session.query(Session).join(
+        SessionParticipant, Session.id == SessionParticipant.session_id
+    ).filter(
+        SessionParticipant.user_id == session['user_id'],
+        Session.creator_id != session['user_id']  # Not the creator
+    ).distinct().order_by(Session.created_at.desc()).all()
+    
+    sessions_data = []
+    
+    # Add created sessions
+    for s in created_sessions:
+        # Get unique participants (count distinct user_id and guest_name combinations)
+        # For registered users, count by user_id; for guests, count by guest_name
+        all_participants = SessionParticipant.query.filter_by(session_id=s.id).all()
+        unique_participants = set()
+        for p in all_participants:
+            if p.user_id:
+                unique_participants.add(('user', p.user_id))
+            else:
+                unique_participants.add(('guest', p.guest_name))
+        max_participant_count = len(unique_participants)
+        
+        # Get currently active unique participants
+        active_participants = SessionParticipant.query.filter_by(
+            session_id=s.id,
+            is_active=True
+        ).all()
+        active_unique_participants = set()
+        for p in active_participants:
+            if p.user_id:
+                active_unique_participants.add(('user', p.user_id))
+            else:
+                active_unique_participants.add(('guest', p.guest_name))
+        active_participant_count = len(active_unique_participants)
+        
+        sessions_data.append({
+            'id': s.id,
+            'session_code': s.session_code,
+            'session_name': s.session_name,
+            'created_at': s.created_at.isoformat(),
+            'is_active': s.is_active,
+            'participant_count': max_participant_count,
+            'active_participant_count': active_participant_count,
+            'is_creator': True,
+            'user_is_active': True  # Creator is always considered active if session is active
+        })
+    
+    # Add joined sessions
+    for s in joined_sessions:
+        creator = User.query.get(s.creator_id)
+        
+        # Get unique participants
+        all_participants = SessionParticipant.query.filter_by(session_id=s.id).all()
+        unique_participants = set()
+        for p in all_participants:
+            if p.user_id:
+                unique_participants.add(('user', p.user_id))
+            else:
+                unique_participants.add(('guest', p.guest_name))
+        max_participant_count = len(unique_participants)
+        
+        # Get currently active unique participants
+        active_participants = SessionParticipant.query.filter_by(
+            session_id=s.id,
+            is_active=True
+        ).all()
+        active_unique_participants = set()
+        for p in active_participants:
+            if p.user_id:
+                active_unique_participants.add(('user', p.user_id))
+            else:
+                active_unique_participants.add(('guest', p.guest_name))
+        active_participant_count = len(active_unique_participants)
+        
+        # Check if user is currently active in this session
+        user_participant = SessionParticipant.query.filter_by(
+            session_id=s.id,
+            user_id=session['user_id']
+        ).first()
+        
+        sessions_data.append({
+            'id': s.id,
+            'session_code': s.session_code,
+            'session_name': s.session_name,
+            'created_at': s.created_at.isoformat(),
+            'is_active': s.is_active,
+            'participant_count': max_participant_count,
+            'active_participant_count': active_participant_count,
+            'is_creator': False,
+            'creator_name': creator.username if creator else 'Unknown',
+            'user_is_active': user_participant.is_active if user_participant else False,
+            'joined_at': user_participant.joined_at.isoformat() if user_participant else None
+        })
+    
+    # Sort all sessions by created_at descending
+    sessions_data.sort(key=lambda x: x['created_at'], reverse=True)
+    
+    return jsonify({'success': True, 'sessions': sessions_data})
+
 @app.route('/api/end_session', methods=['POST'])
 def end_session():
     if 'user_id' not in session:
@@ -505,17 +616,40 @@ def get_participants():
         
         name = p.user.username if p.user else p.guest_name
         
+        # Check if location is stale (older than 30 seconds) - consider as offline
+        is_online = False
+        if latest_location:
+            time_diff = (datetime.utcnow() - latest_location.timestamp).total_seconds()
+            is_online = time_diff < 30
+        
         participants_data.append({
             'id': p.id,
             'name': name,
             'is_guest': p.user_id is None,
-            'latitude': latest_location.latitude if latest_location else None,
-            'longitude': latest_location.longitude if latest_location else None,
+            'latitude': latest_location.latitude if latest_location and is_online else None,
+            'longitude': latest_location.longitude if latest_location and is_online else None,
             'accuracy': latest_location.accuracy if latest_location else None,
-            'last_update': latest_location.timestamp.isoformat() if latest_location else None
+            'last_update': latest_location.timestamp.isoformat() if latest_location else None,
+            'is_online': is_online
         })
     
     return jsonify({'success': True, 'participants': participants_data})
+
+@app.route('/api/stop_sharing', methods=['POST'])
+def stop_sharing():
+    """Mark user as offline by clearing their location data"""
+    if 'participant_id' not in session:
+        return jsonify({'success': False, 'message': 'Not a participant'}), 401
+    
+    try:
+        # Delete all locations for this participant to mark them as offline
+        Location.query.filter_by(participant_id=session['participant_id']).delete()
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': 'Stopped sharing location'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': 'Server error'}), 500
 
 @app.route('/api/leave_session', methods=['POST'])
 def leave_session():
@@ -526,6 +660,9 @@ def leave_session():
     
     if participant:
         try:
+            # Clear location data when leaving
+            Location.query.filter_by(participant_id=session['participant_id']).delete()
+            
             participant.is_active = False
             db.session.commit()
             

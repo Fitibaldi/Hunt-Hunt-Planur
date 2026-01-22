@@ -147,10 +147,14 @@ createSessionForm.addEventListener('submit', async (e) => {
         const data = await response.json();
         
         if (data.success) {
-            showMessage('Session created successfully!', 'success');
+            showMessage('Session created successfully! Redirecting...', 'success');
             createSessionModal.classList.remove('active');
             createSessionForm.reset();
-            loadSessions();
+            
+            // Redirect to the session page to auto-start location sharing
+            setTimeout(() => {
+                window.location.href = `session.html?code=${data.session.session_code}`;
+            }, 500);
         } else {
             showMessage(data.message || 'Failed to create session', 'error');
         }

@@ -602,3 +602,206 @@ footer {
         gap: 10px;
     }
 }
+
+/* Filter Tabs */
+.filter-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.filter-tab {
+    padding: 10px 20px;
+    border: 2px solid var(--border-color);
+    background: var(--card-background);
+    color: var(--text-primary);
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.filter-tab:hover {
+    border-color: var(--primary-color);
+    background: rgba(37, 99, 235, 0.05);
+}
+
+.filter-tab.active {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+}
+
+/* Burger Menu */
+.burger-menu-container {
+    position: relative;
+    z-index: 1000;
+}
+
+.burger-button {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around;
+    width: 40px;
+    height: 40px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 8px;
+    z-index: 1001;
+    transition: all 0.3s ease;
+}
+
+.burger-button:hover {
+    background: rgba(37, 99, 235, 0.1);
+    border-radius: 8px;
+}
+
+.burger-line {
+    width: 100%;
+    height: 3px;
+    background: var(--primary-color);
+    border-radius: 3px;
+    transition: all 0.3s ease;
+}
+
+.burger-button.active .burger-line:nth-child(1) {
+    transform: rotate(45deg) translate(8px, 8px);
+}
+
+.burger-button.active .burger-line:nth-child(2) {
+    opacity: 0;
+}
+
+.burger-button.active .burger-line:nth-child(3) {
+    transform: rotate(-45deg) translate(8px, -8px);
+}
+
+.burger-nav {
+    position: fixed;
+    top: 0;
+    left: -300px;
+    width: 280px;
+    height: 100vh;
+    background: var(--card-background);
+    box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+    transition: left 0.3s ease;
+    z-index: 1002;
+    overflow-y: auto;
+}
+
+.burger-nav.active {
+    left: 0;
+}
+
+.burger-nav-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    border-bottom: 2px solid var(--border-color);
+    background: var(--primary-color);
+    color: white;
+}
+
+.burger-nav-header h3 {
+    margin: 0;
+    font-size: 1.5rem;
+}
+
+.burger-close {
+    background: transparent;
+    border: none;
+    font-size: 2rem;
+    color: white;
+    cursor: pointer;
+    padding: 0;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background 0.3s ease;
+}
+
+.burger-close:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.burger-nav-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.burger-nav-list li {
+    border-bottom: 1px solid var(--border-color);
+}
+
+.burger-nav-list a,
+.burger-nav-list button {
+    display: block;
+    padding: 16px 20px;
+    color: var(--text-primary);
+    text-decoration: none;
+    font-size: 1.1rem;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    background: transparent;
+    border: none;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+}
+
+.burger-nav-list a:hover,
+.burger-nav-list button:hover {
+    background: rgba(37, 99, 235, 0.1);
+    color: var(--primary-color);
+    padding-left: 30px;
+}
+
+.menu-user-info {
+    padding: 16px 20px;
+    background: rgba(37, 99, 235, 0.1);
+    color: var(--primary-color);
+    font-weight: 600;
+    font-size: 1.1rem;
+}
+
+.nav-logout-btn {
+    color: var(--danger-color) !important;
+}
+
+.nav-logout-btn:hover {
+    background: rgba(239, 68, 68, 0.1) !important;
+}
+
+.burger-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+    z-index: 1001;
+}
+
+.burger-overlay.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Responsive adjustments for burger menu */
+@media (max-width: 768px) {
+    .burger-nav {
+        width: 100%;
+        left: -100%;
+    }
+}

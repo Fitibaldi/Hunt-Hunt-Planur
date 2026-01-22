@@ -164,13 +164,25 @@ async function startSharing() {
 }
 
 // Stop sharing location
-function stopSharing() {
+async function stopSharing() {
     if (watchId !== null) {
         navigator.geolocation.clearWatch(watchId);
         watchId = null;
     }
     
     isSharing = false;
+    
+    // Notify server to mark as offline
+    try {
+        await fetch('/api/stop_sharing', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+    } catch (error) {
+        console.error('Failed to notify server about stopping location sharing:', error);
+    }
     
     // Update button
     const toggleBtn = document.getElementById('toggleSharingBtn');
@@ -273,14 +285,15 @@ function updateParticipantsList(participants) {
     participantCount.textContent = participants.length;
     
     participantsList.innerHTML = participants.map(p => {
-        const isOnline = p.latitude && p.longitude;
+        // Use is_online flag from server if available, otherwise check for coordinates
+        const isOnline = p.is_online !== undefined ? p.is_online : (p.latitude && p.longitude);
         const lastUpdate = p.last_update ? new Date(p.last_update).toLocaleTimeString() : 'Never';
         
         return `
             <div class="participant-item ${isOnline ? '' : 'offline'}">
                 <div class="participant-name">${p.name}</div>
                 <div class="participant-status ${isOnline ? 'online' : ''}">
-                    ${isOnline ? '🟢 Online' : '⚫ Offline'}
+                    ${isOnline ? '🟢 Sharing Location' : '⚫ Offline'}
                 </div>
                 <div class="participant-status">
                     Last update: ${lastUpdate}
@@ -299,19 +312,24 @@ function updateMapMarkers(participants) {
         return;
     }
     
-    // Remove old markers
+    // Remove old markers for participants who are no longer in the list or are offline
     Object.keys(markers).forEach(id => {
-        if (!participants.find(p => p.id == id)) {
+        const participant = participants.find(p => p.id == id);
+        const isOnline = participant && (participant.is_online !== undefined ? participant.is_online : (participant.latitude && participant.longitude));
+        
+        if (!participant || !isOnline) {
             map.removeLayer(markers[id]);
             delete markers[id];
         }
     });
     
-    // Add/update markers
+    // Add/update markers only for online participants
     participants.forEach(participant => {
-        console.log(`Participant ${participant.name}: lat=${participant.latitude}, lng=${participant.longitude}`);
+        const isOnline = participant.is_online !== undefined ? participant.is_online : (participant.latitude && participant.longitude);
         
-        if (participant.latitude && participant.longitude) {
+        console.log(`Participant ${participant.name}: lat=${participant.latitude}, lng=${participant.longitude}, online=${isOnline}`);
+        
+        if (isOnline && participant.latitude && participant.longitude) {
             const lat = parseFloat(participant.latitude);
             const lng = parseFloat(participant.longitude);
             
@@ -320,7 +338,7 @@ function updateMapMarkers(participants) {
             if (markers[participant.id]) {
                 // Update existing marker
                 markers[participant.id].setLatLng([lat, lng]);
-                markers[participant.id].setPopupContent(participant.name);
+                markers[participant.id].setPopupContent(`<b>${participant.name}</b><br>Last update: ${new Date(participant.last_update).toLocaleTimeString()}`);
             } else {
                 // Create new marker with custom pin icon
                 const colors = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
@@ -369,6 +387,10 @@ function updateMapMarkers(participants) {
                     .addTo(map)
                     .bindPopup(`<b>${participant.name}</b><br>Last update: ${new Date(participant.last_update).toLocaleTimeString()}`);
             }
+        } else if (markers[participant.id]) {
+            // Remove marker if participant went offline
+            map.removeLayer(markers[participant.id]);
+            delete markers[participant.id];
         }
     });
 }
@@ -435,7 +457,14 @@ document.getElementById('leaveSessionBtn').addEventListener('click', async () =>
 
 // Initialize
 initMap();
-loadSessionInfo();
+loadSessionInfo().then(() => {
+    // Auto-start location sharing after session info is loaded
+    if (participantId) {
+        setTimeout(() => {
+            startSharing();
+        }, 1000); // Small delay to ensure map is ready
+    }
+});
 
 // Start polling for participants updates
 updateInterval = setInterval(loadParticipants, 3000); // Update every 3 seconds

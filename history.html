@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>History - Hunt-Hunt-Planur</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><a href="index.html" style="color: inherit; text-decoration: none;">🗺️ Hunt-Hunt-Planur</a></h1>
+            <div class="header-actions">
+                <a href="dashboard.html" class="btn btn-small">← Dashboard</a>
+                <span id="userDisplay" class="user-display"></span>
+                <button id="logoutBtn" class="btn btn-small">Logout</button>
+            </div>
+        </header>
+
+        <main class="dashboard-content">
+            <div class="dashboard-header">
+                <h2>📜 Session History</h2>
+                <p class="subtitle">View all your past and current sessions</p>
+            </div>
+
+            <div id="message" class="message"></div>
+
+            <!-- All Sessions -->
+            <div class="sessions-section">
+                <h3>All Sessions</h3>
+                <div class="filter-tabs">
+                    <button class="filter-tab active" data-filter="all">All</button>
+                    <button class="filter-tab" data-filter="created">Created by Me</button>
+                    <button class="filter-tab" data-filter="joined">Joined</button>
+                    <button class="filter-tab" data-filter="active">Active</button>
+                    <button class="filter-tab" data-filter="ended">Ended</button>
+                </div>
+                <div id="historyList" class="sessions-list">
+                    <p class="loading">Loading session history...</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="js/navigation.js"></script>
+    <script src="js/history.js"></script>
+</body>
+</html>

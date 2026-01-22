@@ -35,6 +35,14 @@
                     <a href="dashboard.html" class="btn btn-primary">Go to Dashboard</a>
                 </div>
 
+                <!-- History card (only shown when logged in) -->
+                <div class="card" id="historyCard" style="display: none;">
+                    <div class="card-icon">📜</div>
+                    <h3>History</h3>
+                    <p>View all your past and current sessions</p>
+                    <a href="history.html" class="btn btn-secondary">View History</a>
+                </div>
+
                 <!-- Login card (hidden when logged in) -->
                 <div class="card" id="loginCard">
                     <div class="card-icon"></div>
@@ -84,16 +92,18 @@
                 const data = await response.json();
                 
                 if (data.authenticated) {
-                    // User is logged in - show dashboard, hide login/register
+                    // User is logged in - show dashboard and history, hide login/register
                     document.getElementById('userInfo').style.display = 'block';
                     document.getElementById('username').textContent = data.username;
                     document.getElementById('dashboardCard').style.display = 'block';
+                    document.getElementById('historyCard').style.display = 'block';
                     document.getElementById('loginCard').style.display = 'none';
                     document.getElementById('registerCard').style.display = 'none';
                 } else {
-                    // User is not logged in - show login/register, hide dashboard
+                    // User is not logged in - show login/register, hide dashboard and history
                     document.getElementById('userInfo').style.display = 'none';
                     document.getElementById('dashboardCard').style.display = 'none';
+                    document.getElementById('historyCard').style.display = 'none';
                     document.getElementById('loginCard').style.display = 'block';
                     document.getElementById('registerCard').style.display = 'block';
                 }
@@ -102,6 +112,7 @@
                 // On error, show login/register options
                 document.getElementById('userInfo').style.display = 'none';
                 document.getElementById('dashboardCard').style.display = 'none';
+                document.getElementById('historyCard').style.display = 'none';
                 document.getElementById('loginCard').style.display = 'block';
                 document.getElementById('registerCard').style.display = 'block';
             }
@@ -122,5 +133,6 @@
         // Check auth on page load
         checkAuth();
     </script>
+    <script src="js/navigation.js"></script>
 </body>
 </html>
