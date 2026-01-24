@@ -217,20 +217,48 @@ header h1 {
     text-align: left;
 }
 
-.features h3 {
+.features-content {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    align-items: center;
+}
+
+.features-text h3 {
     font-size: 1.8rem;
     margin-bottom: 20px;
     color: var(--primary-color);
 }
 
-.features ul {
+.features-text ul {
     list-style: none;
     font-size: 1.1rem;
 }
 
-.features li {
+.features-text li {
     padding: 10px 0;
     color: var(--text-primary);
+}
+
+.features-image {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.features-image img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 10px;
+    box-shadow: var(--shadow-lg);
+}
+
+/* Responsive: Stack on smaller screens */
+@media (max-width: 768px) {
+    .features-content {
+        grid-template-columns: 1fr;
+        gap: 30px;
+    }
 }
 
 /* Auth Content */
@@ -1019,6 +1047,14 @@ footer {
 .burger-overlay.active {
     opacity: 1;
     visibility: visible;
+}
+
+.menu-icon {
+    width: 24px;
+    height: 24px;
+    vertical-align: middle;
+    margin-right: 8px;
+    filter: brightness(0) invert(1); /* Makes icon white to match text */
 }
 
 /* Responsive adjustments for burger menu */
