@@ -72,6 +72,17 @@ class Location(db.Model):
     accuracy = db.Column(db.Float)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
+class Notification(db.Model):
+    __tablename__ = 'notifications'
+    id = db.Column(db.Integer, primary_key=True)
+    session_id = db.Column(db.Integer, db.ForeignKey('sessions.id'), nullable=False)
+    sender_participant_id = db.Column(db.Integer, db.ForeignKey('session_participants.id'), nullable=False)
+    message = db.Column(db.String(500), nullable=False)
+    sender_latitude = db.Column(db.Float, nullable=True)
+    sender_longitude = db.Column(db.Float, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    is_read = db.Column(db.Boolean, default=False)
+
 # Helper Functions
 def generate_session_code():
     """Generate a unique 6-character session code"""
@@ -838,6 +849,7 @@ def get_participants():
             'user_id': p.user_id,
             'name': name,
             'is_guest': p.user_id is None,
+            'profile_picture': p.user.profile_picture if p.user else None,
             'latitude': latest_location.latitude if latest_location and is_online else None,
             'longitude': latest_location.longitude if latest_location and is_online else None,
             'accuracy': latest_location.accuracy if latest_location else None,
@@ -1068,6 +1080,116 @@ def remove_profile_picture():
         db.session.rollback()
         return jsonify({'success': False, 'message': 'Server error'}), 500
 
+@app.route('/api/send_alert', methods=['POST'])
+def send_alert():
+    """Send an alert notification to all participants in the session"""
+    if 'participant_id' not in session:
+        return jsonify({'success': False, 'message': 'Not a participant'}), 401
+    
+    # Get the current participant
+    participant = SessionParticipant.query.get(session['participant_id'])
+    if not participant:
+        return jsonify({'success': False, 'message': 'Participant not found'}), 404
+    
+    # Get participant name
+    sender_name = participant.user.username if participant.user else participant.guest_name
+    
+    # Get participant's current location
+    latest_location = Location.query.filter_by(
+        participant_id=participant.id
+    ).order_by(Location.timestamp.desc()).first()
+    
+    sender_lat = latest_location.latitude if latest_location else None
+    sender_lng = latest_location.longitude if latest_location else None
+    
+    # Create notification message
+    message = f"Alert! {sender_name} is calling you"
+    
+    try:
+        # Create notification
+        notification = Notification(
+            session_id=participant.session_id,
+            sender_participant_id=participant.id,
+            message=message,
+            sender_latitude=sender_lat,
+            sender_longitude=sender_lng
+        )
+        db.session.add(notification)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Alert sent to all participants',
+            'notification': {
+                'sender_name': sender_name,
+                'latitude': sender_lat,
+                'longitude': sender_lng
+            }
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': 'Server error'}), 500
+
+@app.route('/api/get_notifications', methods=['GET'])
+def get_notifications():
+    """Get unread notifications for the current participant"""
+    if 'participant_id' not in session:
+        return jsonify({'success': False, 'message': 'Not a participant'}), 401
+    
+    participant = SessionParticipant.query.get(session['participant_id'])
+    if not participant:
+        return jsonify({'success': False, 'message': 'Participant not found'}), 404
+    
+    # Get unread notifications for this session, excluding ones sent by this participant
+    notifications = Notification.query.filter(
+        Notification.session_id == participant.session_id,
+        Notification.sender_participant_id != participant.id,
+        Notification.is_read == False
+    ).order_by(Notification.created_at.desc()).all()
+    
+    notifications_data = []
+    for notif in notifications:
+        sender = SessionParticipant.query.get(notif.sender_participant_id)
+        sender_name = sender.user.username if sender and sender.user else (sender.guest_name if sender else 'Unknown')
+        
+        notifications_data.append({
+            'id': notif.id,
+            'message': notif.message,
+            'sender_name': sender_name,
+            'sender_latitude': notif.sender_latitude,
+            'sender_longitude': notif.sender_longitude,
+            'created_at': notif.created_at.isoformat()
+        })
+    
+    return jsonify({
+        'success': True,
+        'notifications': notifications_data
+    })
+
+@app.route('/api/mark_notifications_read', methods=['POST'])
+def mark_notifications_read():
+    """Mark notifications as read"""
+    if 'participant_id' not in session:
+        return jsonify({'success': False, 'message': 'Not a participant'}), 401
+    
+    data = request.get_json()
+    notification_ids = data.get('notification_ids', [])
+    
+    if not notification_ids:
+        return jsonify({'success': False, 'message': 'No notification IDs provided'}), 400
+    
+    try:
+        Notification.query.filter(Notification.id.in_(notification_ids)).update(
+            {Notification.is_read: True},
+            synchronize_session=False
+        )
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': 'Notifications marked as read'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': 'Server error'}), 500
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
@@ -1093,11 +1215,11 @@ if __name__ == '__main__':
     
     if os.path.exists(cert_file) and os.path.exists(key_file):
         print("=" * 60)
-        print("🔒 Starting server with HTTPS (SSL enabled)")
+        print("[HTTPS] Starting server with HTTPS (SSL enabled)")
         print("=" * 60)
         print(f"Server running at: https://{local_ip}:5000/")
         print(f"Local access: https://localhost:5000/")
-        print("\n⚠️  IMPORTANT:")
+        print("\n[!] IMPORTANT:")
         print("   - Your browser will show a security warning")
         print("   - Click 'Advanced' and 'Proceed' to accept the certificate")
         print("   - This is normal for self-signed certificates")

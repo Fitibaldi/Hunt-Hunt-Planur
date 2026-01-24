@@ -512,6 +512,99 @@ header h1 {
     flex-direction: column;
 }
 
+/* Notification Permission Banner */
+.notification-permission-banner {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 15px 20px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    z-index: 2001;
+    animation: slideDown 0.3s ease-out;
+}
+
+.notification-permission-banner .banner-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    flex-wrap: wrap;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.notification-permission-banner .banner-icon {
+    font-size: 1.5rem;
+}
+
+.notification-permission-banner .banner-text {
+    flex: 1;
+    min-width: 250px;
+    font-size: 0.95rem;
+    line-height: 1.4;
+}
+
+.notification-permission-banner .btn {
+    padding: 8px 16px;
+    font-size: 0.9rem;
+    white-space: nowrap;
+}
+
+@keyframes slideDown {
+    from {
+        transform: translateY(-100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* Mobile responsive for notification banner */
+@media (max-width: 768px) {
+    .notification-permission-banner .banner-content {
+        flex-direction: column;
+        text-align: center;
+        gap: 10px;
+    }
+    
+    .notification-permission-banner .banner-text {
+        min-width: 100%;
+    }
+    
+    .notification-permission-banner .btn {
+        width: 100%;
+        max-width: 300px;
+    }
+}
+
+/* Alert Notification Panel */
+.alert-notification-panel {
+    background: #ef4444;
+    color: white;
+    padding: 15px 20px;
+    text-align: center;
+    font-weight: 600;
+    font-size: 1.1rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    z-index: 2000;
+}
+
+.alert-notification-panel.blinking {
+    animation: blink 1s ease-in-out infinite;
+}
+
+@keyframes blink {
+    0%, 100% {
+        background: #ef4444;
+        opacity: 1;
+    }
+    50% {
+        background: #dc2626;
+        opacity: 0.8;
+    }
+}
+
 .session-header {
     background: var(--card-background);
     padding: 15px 20px;
@@ -535,6 +628,22 @@ header h1 {
 .session-code-display strong {
     color: var(--primary-color);
     font-size: 1.1rem;
+}
+
+.session-code-display .copy-icon {
+    display: none;
+}
+
+.session-code-display .copy-text {
+    display: inline;
+}
+
+#leaveSessionBtn .leave-icon {
+    display: none;
+}
+
+#leaveSessionBtn .leave-text {
+    display: inline;
 }
 
 .session-layout {
@@ -561,6 +670,27 @@ header h1 {
     display: flex;
     gap: 10px;
     z-index: 1000;
+}
+
+/* Fullscreen Map */
+.map-container.fullscreen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 9999;
+    background: white;
+}
+
+.map-container.fullscreen #map {
+    width: 100%;
+    height: 100%;
+}
+
+/* Hide sidebar when map is fullscreen */
+.session-layout:has(.map-container.fullscreen) .participants-sidebar {
+    display: none;
 }
 
 /* Participants Sidebar */
@@ -596,6 +726,15 @@ header h1 {
     gap: 10px;
 }
 
+.participant-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid var(--primary-color);
+    flex-shrink: 0;
+}
+
 .participant-info {
     flex: 1;
     min-width: 0;
@@ -614,6 +753,16 @@ header h1 {
 .participant-item.offline {
     opacity: 0.6;
     border-left-color: var(--text-secondary);
+}
+
+.participant-item.current-user {
+    background: rgba(239, 68, 68, 0.1);
+    border-left-color: var(--danger-color);
+    border-left-width: 5px;
+}
+
+.participant-item.current-user:not(.offline):hover {
+    background: rgba(239, 68, 68, 0.15);
 }
 
 .participant-name {
@@ -849,8 +998,102 @@ footer {
     }
 
     .session-header {
-        flex-direction: column;
-        gap: 10px;
+        flex-direction: row;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 8px;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+    }
+    
+    .session-info {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex: 1;
+        min-width: 0;
+    }
+    
+    .session-info h1 {
+        font-size: 0.9rem;
+        margin-bottom: 0;
+        display: flex;
+        align-items: center;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex-shrink: 1;
+        min-width: 0;
+    }
+    
+    .session-info h1 img {
+        width: 28px !important;
+        height: 28px !important;
+        margin-right: 4px !important;
+        flex-shrink: 0;
+    }
+    
+    .session-info h1 span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+    }
+    
+    .session-info h1 .btn-icon {
+        display: none !important;
+    }
+    
+    .session-code-display {
+        font-size: 0.75rem;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+    
+    .session-code-display strong {
+        font-size: 0.85rem;
+    }
+    
+    .session-code-display .btn-small {
+        padding: 4px 6px;
+        font-size: 1rem;
+        min-width: auto;
+    }
+    
+    .session-code-display .copy-text {
+        display: none;
+    }
+    
+    .session-code-display .copy-icon {
+        display: inline;
+    }
+    
+    .header-actions {
+        display: flex;
+        gap: 4px;
+        flex-shrink: 0;
+    }
+    
+    .header-actions .user-display {
+        display: none;
+    }
+    
+    #leaveSessionBtn {
+        padding: 6px 8px;
+        font-size: 1.2rem;
+        min-width: auto;
+        line-height: 1;
+    }
+    
+    #leaveSessionBtn .leave-text {
+        display: none;
+    }
+    
+    #leaveSessionBtn .leave-icon {
+        display: inline;
     }
 }
 
@@ -1062,5 +1305,56 @@ footer {
     .burger-nav {
         width: 100%;
         left: -100%;
+    }
+}
+
+/* Floating Alert Button */
+.floating-alert-btn {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);
+    color: white;
+    border: none;
+    font-size: 28px;
+    cursor: pointer;
+    box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4);
+    transition: all 0.3s ease;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: pulse-alert 2s infinite;
+}
+
+.floating-alert-btn:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(239, 68, 68, 0.6);
+}
+
+.floating-alert-btn:active {
+    transform: scale(0.95);
+}
+
+@keyframes pulse-alert {
+    0%, 100% {
+        box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4);
+    }
+    50% {
+        box-shadow: 0 4px 25px rgba(239, 68, 68, 0.7);
+    }
+}
+
+/* Responsive adjustments for floating button */
+@media (max-width: 768px) {
+    .floating-alert-btn {
+        bottom: 20px;
+        right: 20px;
+        width: 55px;
+        height: 55px;
+        font-size: 24px;
     }
 }

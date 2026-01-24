@@ -9,6 +9,21 @@
 </head>
 <body>
     <div class="session-container">
+        <!-- Notification Permission Banner -->
+        <div id="notificationPermissionBanner" class="notification-permission-banner" style="display: none;">
+            <div class="banner-content">
+                <span class="banner-icon">🔔</span>
+                <span class="banner-text">Enable notifications to receive alerts even when your screen is locked or the app is in the background</span>
+                <button id="enableNotificationsBtn" class="btn btn-small btn-primary">Enable Notifications</button>
+                <button id="dismissNotificationBanner" class="btn btn-small btn-secondary">Maybe Later</button>
+            </div>
+        </div>
+        
+        <!-- Alert Notification Panel -->
+        <div id="alertNotificationPanel" class="alert-notification-panel" style="display: none;">
+            <span id="alertNotificationText"></span>
+        </div>
+        
         <header class="session-header">
             <div class="session-info">
                 <h1>
@@ -18,22 +33,26 @@
                 </h1>
                 <div class="session-code-display">
                     Code: <strong id="sessionCode"></strong>
-                    <button id="copyCodeBtn" class="btn btn-small">Copy</button>
+                    <button id="copyCodeBtn" class="btn btn-small"><span class="copy-text">Copy</span><span class="copy-icon">📋</span></button>
                 </div>
             </div>
             <div class="header-actions">
                 <span id="participantName" class="user-display"></span>
-                <button id="leaveSessionBtn" class="btn btn-small btn-danger">Leave Session</button>
+                <button id="leaveSessionBtn" class="btn btn-small btn-danger">
+                    <span class="leave-text">Leave Session</span>
+                    <span class="leave-icon">🚪</span>
+                </button>
             </div>
         </header>
 
         <div class="session-layout">
             <!-- Map Container -->
-            <div class="map-container">
+            <div class="map-container" id="mapContainer">
                 <div id="map"></div>
                 <div class="map-controls">
-                    <button id="centerMapBtn" class="btn btn-small">📍 Center on Me</button>
+                    <button id="centerMapBtn" class="btn btn-small">📍</button>
                     <button id="toggleSharingBtn" class="btn btn-small btn-primary">Share Location</button>
+                    <button id="fullscreenBtn" class="btn btn-small">⛶</button>
                 </div>
             </div>
 
@@ -43,6 +62,11 @@
                 <div id="participantsList" class="participants-list"></div>
             </div>
         </div>
+
+        <!-- Floating Alert Button -->
+        <button id="alertBtn" class="floating-alert-btn" title="Alert all participants">
+            📢
+        </button>
 
         <div id="message" class="message"></div>
     </div>

@@ -355,10 +355,23 @@ function updateParticipantsList(participants) {
         // Check if offline user has last known location
         const hasLastLocation = !isOnline && p.latitude && p.longitude;
         
+        // Check if this is the current user
+        const isCurrentUser = p.id === participantId;
+        
         return `
-            <div class="participant-item ${isOnline ? '' : 'offline'}" data-participant-id="${p.id}" style="cursor: ${(isOnline || hasLastLocation) ? 'pointer' : 'default'};">
+            <div class="participant-item ${isOnline ? '' : 'offline'} ${isCurrentUser ? 'current-user' : ''}" data-participant-id="${p.id}" style="cursor: ${(isOnline || hasLastLocation) ? 'pointer' : 'default'};">
+                ${p.profile_picture ? `
+                    <img src="${p.profile_picture}"
+                         alt="${p.name}"
+                         class="participant-avatar"
+                         onerror="this.style.display='none'">
+                ` : ''}
                 <div class="participant-info">
-                    <div class="participant-name">${p.name}${p.user_id === creatorId ? ' 👑' : ''}</div>
+                    <div class="participant-name">
+                        ${p.name}
+                        ${p.user_id === creatorId ? ' 👑' : ''}
+                        ${isCurrentUser ? ' <img src="img/hunt-hunt-planur-48p.webp" alt="You" style="width: 20px; height: 20px; vertical-align: middle;" title="You">' : ''}
+                    </div>
                     <div class="participant-status ${isOnline ? 'online' : ''}">
                         ${isOnline ? '🟢 Sharing Location' : '⚫ Offline'}
                     </div>
@@ -482,6 +495,21 @@ function showLastLocation(participant) {
     const lat = parseFloat(participant.latitude);
     const lng = parseFloat(participant.longitude);
     
+    // Build marker content with profile picture if available
+    let markerContent = '';
+    if (participant.profile_picture) {
+        markerContent = `
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <img src="${participant.profile_picture}"
+                     style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 2px solid white;"
+                     onerror="this.style.display='none'">
+                <span>${participant.name} (Last Location)</span>
+            </div>
+        `;
+    } else {
+        markerContent = `${participant.name} (Last Location)`;
+    }
+    
     // Create a semi-transparent marker for last known location
     const icon = L.divIcon({
         className: 'custom-marker temporary-marker',
@@ -497,7 +525,7 @@ function showLastLocation(participant) {
                     white-space: nowrap;
                     font-size: 14px;
                     border: 3px solid white;
-                ">${participant.name} (Last Location)</div>
+                ">${markerContent}</div>
                 <div style="
                     width: 0;
                     height: 0;
@@ -622,6 +650,21 @@ function updateMapMarkers(participants) {
                 const colors = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
                 const color = colors[participant.id % colors.length];
                 
+                // Build marker content with profile picture if available
+                let markerContent = '';
+                if (participant.profile_picture) {
+                    markerContent = `
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <img src="${participant.profile_picture}"
+                                 style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 2px solid white;"
+                                 onerror="this.style.display='none'">
+                            <span>${participant.name}</span>
+                        </div>
+                    `;
+                } else {
+                    markerContent = participant.name;
+                }
+                
                 const icon = L.divIcon({
                     className: 'custom-marker',
                     html: `
@@ -636,7 +679,7 @@ function updateMapMarkers(participants) {
                                 white-space: nowrap;
                                 font-size: 14px;
                                 border: 3px solid white;
-                            ">${participant.name}</div>
+                            ">${markerContent}</div>
                             <div style="
                                 width: 0;
                                 height: 0;
@@ -657,8 +700,8 @@ function updateMapMarkers(participants) {
                             "></div>
                         </div>
                     `,
-                    iconSize: [150, 80],
-                    iconAnchor: [75, 80]
+                    iconSize: [200, 80],
+                    iconAnchor: [100, 80]
                 });
                 
                 markers[participant.id] = L.marker([lat, lng], { icon })
@@ -703,6 +746,27 @@ document.getElementById('toggleSharingBtn').addEventListener('click', () => {
     } else {
         startSharing();
     }
+});
+
+// Fullscreen button
+document.getElementById('fullscreenBtn').addEventListener('click', () => {
+    const mapContainer = document.getElementById('mapContainer');
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
+    
+    if (mapContainer.classList.contains('fullscreen')) {
+        // Exit fullscreen
+        mapContainer.classList.remove('fullscreen');
+        fullscreenBtn.textContent = '⛶ Fullscreen';
+    } else {
+        // Enter fullscreen
+        mapContainer.classList.add('fullscreen');
+        fullscreenBtn.textContent = '⛶ Exit Fullscreen';
+    }
+    
+    // Invalidate map size to ensure proper rendering after resize
+    setTimeout(() => {
+        map.invalidateSize();
+    }, 100);
 });
 
 // Copy session code
@@ -804,10 +868,275 @@ updateInterval = setInterval(loadParticipants, 3000); // Update every 3 seconds
 // Initial load
 loadParticipants();
 
+// Alert button functionality
+document.getElementById('alertBtn').addEventListener('click', async () => {
+    try {
+        const response = await fetch('/api/send_alert', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showMessage('Alert sent to all participants!', 'success');
+        } else {
+            showMessage(data.message || 'Failed to send alert', 'error');
+        }
+    } catch (error) {
+        console.error('Send alert error:', error);
+        showMessage('Failed to send alert', 'error');
+    }
+});
+
+// Poll for notifications
+let notificationInterval = null;
+let alertBlinkTimeout = null;
+let notificationPermissionGranted = false;
+let isPageVisible = true;
+let missedNotificationsCount = 0;
+
+// Show notification permission banner
+function showNotificationPermissionBanner() {
+    const banner = document.getElementById('notificationPermissionBanner');
+    if (banner && 'Notification' in window && Notification.permission === 'default') {
+        banner.style.display = 'block';
+    }
+}
+
+// Request notification permission on page load
+async function requestNotificationPermission() {
+    if ('Notification' in window && Notification.permission === 'default') {
+        try {
+            const permission = await Notification.requestPermission();
+            notificationPermissionGranted = (permission === 'granted');
+            if (notificationPermissionGranted) {
+                console.log('Browser notifications enabled');
+                // Hide banner if shown
+                const banner = document.getElementById('notificationPermissionBanner');
+                if (banner) banner.style.display = 'none';
+            }
+        } catch (error) {
+            console.log('Notification permission request failed:', error);
+        }
+    } else if ('Notification' in window && Notification.permission === 'granted') {
+        notificationPermissionGranted = true;
+    }
+}
+
+// Handle notification permission banner buttons
+document.addEventListener('DOMContentLoaded', () => {
+    const enableBtn = document.getElementById('enableNotificationsBtn');
+    const dismissBtn = document.getElementById('dismissNotificationBanner');
+    
+    if (enableBtn) {
+        enableBtn.addEventListener('click', async () => {
+            await requestNotificationPermission();
+        });
+    }
+    
+    if (dismissBtn) {
+        dismissBtn.addEventListener('click', () => {
+            const banner = document.getElementById('notificationPermissionBanner');
+            if (banner) banner.style.display = 'none';
+        });
+    }
+    
+    // Show banner after 3 seconds if permission not granted
+    setTimeout(() => {
+        if ('Notification' in window && Notification.permission === 'default') {
+            showNotificationPermissionBanner();
+        }
+    }, 3000);
+});
+
+// Show browser notification (works even when tab is in background on mobile)
+function showBrowserNotification(title, body, icon) {
+    if (notificationPermissionGranted && 'Notification' in window) {
+        try {
+            const notification = new Notification(title, {
+                body: body,
+                icon: icon || 'img/hunt-hunt-planur-48p.webp',
+                badge: 'img/hunt-hunt-planur-48p.webp',
+                tag: 'hunt-hunt-planur-alert', // Replaces previous notification
+                requireInteraction: true, // Keeps notification visible until user interacts
+                vibrate: [200, 100, 200], // Vibration pattern for mobile
+                silent: false
+            });
+            
+            // Focus window when notification is clicked
+            notification.onclick = function() {
+                window.focus();
+                notification.close();
+            };
+            
+            return notification;
+        } catch (error) {
+            console.error('Failed to show browser notification:', error);
+        }
+    }
+    return null;
+}
+
+// Play alert sound for mobile devices
+function playAlertSound() {
+    try {
+        // Create a simple beep using Web Audio API
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        oscillator.frequency.value = 800; // Frequency in Hz
+        oscillator.type = 'sine';
+        
+        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+        
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.5);
+    } catch (error) {
+        console.log('Could not play alert sound:', error);
+    }
+}
+
+// Vibrate device (mobile only)
+function vibrateDevice() {
+    if ('vibrate' in navigator) {
+        try {
+            navigator.vibrate([200, 100, 200, 100, 200]); // Vibration pattern
+        } catch (error) {
+            console.log('Vibration failed:', error);
+        }
+    }
+}
+
+// Function to show blinking alert notification
+function showBlinkingAlert(senderName) {
+    const alertPanel = document.getElementById('alertNotificationPanel');
+    const alertText = document.getElementById('alertNotificationText');
+    
+    // Set the alert text
+    alertText.textContent = `Alert: ${senderName} is calling for your attention!`;
+    
+    // Show the panel with blinking animation
+    alertPanel.style.display = 'block';
+    alertPanel.classList.add('blinking');
+    
+    // Clear any existing timeout
+    if (alertBlinkTimeout) {
+        clearTimeout(alertBlinkTimeout);
+    }
+    
+    // Stop blinking after 1 minute (60000 milliseconds)
+    alertBlinkTimeout = setTimeout(() => {
+        alertPanel.classList.remove('blinking');
+        alertPanel.style.display = 'none';
+    }, 60000);
+}
+
+async function checkNotifications() {
+    try {
+        const response = await fetch('/api/get_notifications');
+        const data = await response.json();
+        
+        if (data.success && data.notifications.length > 0) {
+            // Process each notification
+            data.notifications.forEach(notification => {
+                // Show blinking alert panel with sender name
+                showBlinkingAlert(notification.sender_name);
+                
+                // Show notification message
+                showMessage(notification.message, 'info');
+                
+                // If page is not visible (background/locked), use browser notification
+                if (!isPageVisible || document.hidden) {
+                    showBrowserNotification(
+                        `Alert from ${notification.sender_name}`,
+                        notification.message,
+                        'img/hunt-hunt-planur-48p.webp'
+                    );
+                    missedNotificationsCount++;
+                }
+                
+                // Play sound and vibrate for mobile devices
+                playAlertSound();
+                vibrateDevice();
+                
+                // Focus map on sender's location if available and page is visible
+                if (isPageVisible && !document.hidden && notification.sender_latitude && notification.sender_longitude) {
+                    map.setView([notification.sender_latitude, notification.sender_longitude], 16);
+                    
+                    // Find and open the sender's marker popup if they're online
+                    const senderMarker = Object.values(markers).find(marker => {
+                        const latLng = marker.getLatLng();
+                        return Math.abs(latLng.lat - notification.sender_latitude) < 0.0001 &&
+                               Math.abs(latLng.lng - notification.sender_longitude) < 0.0001;
+                    });
+                    
+                    if (senderMarker) {
+                        senderMarker.openPopup();
+                    }
+                }
+            });
+            
+            // Mark notifications as read
+            const notificationIds = data.notifications.map(n => n.id);
+            await fetch('/api/mark_notifications_read', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ notification_ids: notificationIds })
+            });
+        }
+    } catch (error) {
+        console.error('Check notifications error:', error);
+    }
+}
+
+// Handle page visibility changes (when user switches tabs or locks screen)
+document.addEventListener('visibilitychange', () => {
+    isPageVisible = !document.hidden;
+    
+    if (isPageVisible) {
+        console.log('Page became visible, resuming normal polling');
+        // When page becomes visible again, check for notifications immediately
+        checkNotifications();
+        
+        // Show message if there were missed notifications
+        if (missedNotificationsCount > 0) {
+            showMessage(`You have ${missedNotificationsCount} notification(s) while away`, 'info');
+            missedNotificationsCount = 0;
+        }
+    } else {
+        console.log('Page hidden, notifications will use browser notifications');
+    }
+});
+
+// Request notification permission
+requestNotificationPermission();
+
+// Start polling for notifications every 2 seconds
+notificationInterval = setInterval(checkNotifications, 2000);
+
+// Initial check
+checkNotifications();
+
 // Cleanup on page unload
 window.addEventListener('beforeunload', () => {
     stopSharing();
     if (updateInterval) {
         clearInterval(updateInterval);
+    }
+    if (notificationInterval) {
+        clearInterval(notificationInterval);
+    }
+    if (alertBlinkTimeout) {
+        clearTimeout(alertBlinkTimeout);
     }
 });
