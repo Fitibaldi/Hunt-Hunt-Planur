@@ -765,6 +765,32 @@ header h1 {
     background: rgba(239, 68, 68, 0.15);
 }
 
+/* Review mode specific styles */
+.participant-item.review-mode {
+    border-left-color: #8b5cf6;
+}
+
+.participant-item.review-mode.has-location-data {
+    background: rgba(139, 92, 246, 0.05);
+    border-left-width: 5px;
+}
+
+.participant-item.review-mode.has-location-data:hover {
+    background: rgba(139, 92, 246, 0.1);
+    transform: translateX(5px);
+    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.2);
+}
+
+.participant-item.review-mode.no-location-data {
+    opacity: 0.5;
+    border-left-color: #94a3b8;
+    background: rgba(148, 163, 184, 0.05);
+}
+
+.participant-item.review-mode.left-session {
+    border-left-style: dashed;
+}
+
 .participant-name {
     font-weight: 600;
     color: var(--text-primary);

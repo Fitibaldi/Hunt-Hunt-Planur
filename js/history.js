@@ -87,6 +87,8 @@ function displaySessions(sessions) {
             ? `<a href="session.html?code=${session.session_code}" class="btn btn-primary btn-small">Open</a>`
             : isActive && !userIsActive && !isCreator
             ? `<a href="session.html?code=${session.session_code}" class="btn btn-secondary btn-small">Rejoin</a>`
+            : !isActive
+            ? `<a href="session.html?code=${session.session_code}&mode=review" class="btn btn-secondary btn-small">Review</a>`
             : '';
         
         const endButton = isActive && isCreator

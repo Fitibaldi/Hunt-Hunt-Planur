@@ -16,10 +16,12 @@ let participantsData = []; // Store all participants data including offline ones
 let lastPosition = null; // Store last known position
 let trackMarkers = []; // Store track markers for position history
 let trackPolyline = null; // Store polyline for track path
+let isReviewMode = false; // Flag for review mode (ended sessions)
 
 // Get session code from URL
 const urlParams = new URLSearchParams(window.location.search);
 sessionCode = urlParams.get('code');
+isReviewMode = urlParams.get('mode') === 'review';
 
 if (!sessionCode) {
     alert('No session code provided');
@@ -58,7 +60,8 @@ function showMessage(message, type = 'info') {
 // Load session info
 async function loadSessionInfo() {
     try {
-        const response = await fetch(`/api/get_session_info?code=${sessionCode}`);
+        const reviewParam = isReviewMode ? '&review_mode=true' : '';
+        const response = await fetch(`/api/get_session_info?code=${sessionCode}${reviewParam}`);
         const data = await response.json();
         
         if (data.success) {
@@ -75,7 +78,41 @@ async function loadSessionInfo() {
             // Store creator info
             creatorId = data.session.creator_id;
             
-            // Get participant info
+            // Configure UI for review mode
+            if (isReviewMode) {
+                // Show review mode badge
+                document.getElementById('reviewModeBadge').style.display = 'inline-block';
+                
+                // Hide location sharing button
+                document.getElementById('toggleSharingBtn').style.display = 'none';
+                
+                // Hide alert button
+                document.getElementById('alertBtn').style.display = 'none';
+                
+                // Hide leave session button and show back to history button
+                document.getElementById('leaveSessionBtn').style.display = 'none';
+                document.getElementById('backToHistoryBtn').style.display = 'inline-block';
+                
+                // Hide copy code button
+                document.getElementById('copyCodeBtn').style.display = 'none';
+                
+                // Hide notification banner
+                const notificationBanner = document.getElementById('notificationPermissionBanner');
+                if (notificationBanner) {
+                    notificationBanner.style.display = 'none';
+                }
+                
+                // Get current user info for display
+                const authResponse = await fetch('/api/check_auth');
+                const authData = await authResponse.json();
+                if (authData.authenticated) {
+                    document.getElementById('participantName').textContent = authData.username;
+                }
+                
+                return; // Skip participant info loading in review mode
+            }
+            
+            // Get participant info (normal mode)
             const participantResponse = await fetch('/api/get_participant_info');
             const participantData = await participantResponse.json();
             
@@ -313,40 +350,48 @@ function handleLocationError(error) {
 // Load all participants and their locations
 async function loadParticipants() {
     try {
-        const response = await fetch(`/api/get_participants?code=${sessionCode}`);
+        // Use different API endpoint for review mode
+        const apiUrl = isReviewMode
+            ? `/api/get_all_participants_for_review?code=${sessionCode}`
+            : `/api/get_participants?code=${sessionCode}`;
+        
+        const response = await fetch(apiUrl);
         const data = await response.json();
         
         if (data.success) {
             // Store participants data for later use
             participantsData = data.participants;
             
-            // Check if current participant is still in the list
-            const stillInSession = data.participants.some(p => p.id === participantId);
-            
-            if (!stillInSession && participantId) {
-                // User was removed from the session
-                showMessage('You have been removed from this session', 'error');
+            // Skip removal check in review mode
+            if (!isReviewMode) {
+                // Check if current participant is still in the list
+                const stillInSession = data.participants.some(p => p.id === participantId);
                 
-                // Stop sharing location
-                if (isSharing) {
-                    stopSharing();
-                }
-                
-                // Redirect based on user type
-                setTimeout(async () => {
-                    const authResponse = await fetch('/api/check_auth');
-                    const authData = await authResponse.json();
+                if (!stillInSession && participantId) {
+                    // User was removed from the session
+                    showMessage('You have been removed from this session', 'error');
                     
-                    if (authData.authenticated) {
-                        // Redirect to dashboard if logged in
-                        window.location.href = 'dashboard.html';
-                    } else {
-                        // Redirect to homepage if guest
-                        window.location.href = 'index.html';
+                    // Stop sharing location
+                    if (isSharing) {
+                        stopSharing();
                     }
-                }, 2000);
-                
-                return;
+                    
+                    // Redirect based on user type
+                    setTimeout(async () => {
+                        const authResponse = await fetch('/api/check_auth');
+                        const authData = await authResponse.json();
+                        
+                        if (authData.authenticated) {
+                            // Redirect to dashboard if logged in
+                            window.location.href = 'dashboard.html';
+                        } else {
+                            // Redirect to homepage if guest
+                            window.location.href = 'index.html';
+                        }
+                    }, 2000);
+                    
+                    return;
+                }
             }
             
             updateParticipantsList(data.participants);
@@ -364,26 +409,31 @@ function updateParticipantsList(participants) {
     
     participantCount.textContent = participants.length;
     
-    console.log('Updating participants list. isCreator:', isCreator, 'creatorId:', creatorId);
+    console.log('Updating participants list. isCreator:', isCreator, 'creatorId:', creatorId, 'isReviewMode:', isReviewMode);
     
     participantsList.innerHTML = participants.map(p => {
-        // Use is_online flag from server if available, otherwise check for coordinates
-        const isOnline = p.is_online !== undefined ? p.is_online : (p.latitude && p.longitude);
-        const lastUpdate = p.last_update ? new Date(p.last_update).toLocaleTimeString() : 'Never';
+        // In review mode, all participants are considered offline
+        const isOnline = isReviewMode ? false : (p.is_online !== undefined ? p.is_online : (p.latitude && p.longitude));
+        const lastUpdate = p.last_update ? new Date(p.last_update).toLocaleString() : 'Never';
         
-        // Check if this participant can be removed (creator can remove others, but not themselves)
-        const canRemove = isCreator && p.user_id !== creatorId;
+        // In review mode, no one can be removed
+        const canRemove = !isReviewMode && isCreator && p.user_id !== creatorId;
         
         console.log(`Participant ${p.name}: isOnline=${isOnline}, canRemove=${canRemove}, user_id=${p.user_id}`);
         
-        // Check if offline user has last known location
-        const hasLastLocation = !isOnline && p.latitude && p.longitude;
+        // Check if user has any location data for tracking
+        const hasLocationData = p.latitude && p.longitude;
         
-        // Check if this is the current user
-        const isCurrentUser = p.id === participantId;
+        // Check if this is the current user (not applicable in review mode)
+        const isCurrentUser = !isReviewMode && p.id === participantId;
+        
+        // Add distinct styling for review mode
+        const reviewModeClass = isReviewMode ? 'review-mode' : '';
+        const leftSessionClass = isReviewMode && !p.is_active ? 'left-session' : '';
+        const hasDataClass = hasLocationData ? 'has-location-data' : 'no-location-data';
         
         return `
-            <div class="participant-item ${isOnline ? '' : 'offline'} ${isCurrentUser ? 'current-user' : ''}" data-participant-id="${p.id}" style="cursor: ${(isOnline || hasLastLocation) ? 'pointer' : 'default'};">
+            <div class="participant-item ${isOnline ? '' : 'offline'} ${isCurrentUser ? 'current-user' : ''} ${reviewModeClass} ${leftSessionClass} ${hasDataClass}" data-participant-id="${p.id}" style="cursor: ${hasLocationData ? 'pointer' : 'default'};">
                 ${p.profile_picture ? `
                     <img src="${p.profile_picture}"
                          alt="${p.name}"
@@ -391,24 +441,25 @@ function updateParticipantsList(participants) {
                          onerror="this.style.display='none'">
                 ` : ''}
                 <div class="participant-info">
-                    <div class="participant-name">
+                    <div class="participant-name" style="font-weight: ${hasLocationData ? 'bold' : 'normal'}; ${!hasLocationData ? 'color: #94a3b8;' : ''}">
                         ${p.name}
                         ${p.user_id === creatorId ? ' 👑' : ''}
                         ${isCurrentUser ? ' <img src="img/hunt-hunt-planur-48p.webp" alt="You" style="width: 20px; height: 20px; vertical-align: middle;" title="You">' : ''}
+                        ${isReviewMode && !p.is_active ? ' <span style="background: #64748b; color: white; padding: 2px 6px; border-radius: 8px; font-size: 0.7rem; font-weight: bold;">LEFT</span>' : ''}
                     </div>
-                    <div class="participant-status ${isOnline ? 'online' : ''}">
-                        ${isOnline ? '🟢 Sharing Location' : '⚫ Offline'}
+                    <div class="participant-status ${isOnline ? 'online' : ''}" style="${!hasLocationData ? 'color: #94a3b8;' : ''}">
+                        ${isReviewMode ? '📜 Historical Data' : (isOnline ? '🟢 Sharing Location' : '⚫ Offline')}
                     </div>
-                    <div class="participant-status">
-                        Last update: ${lastUpdate}
+                    <div class="participant-status" style="${!hasLocationData ? 'color: #94a3b8;' : ''}">
+                        ${isReviewMode ? `Joined: ${p.joined_at ? new Date(p.joined_at).toLocaleString() : 'Unknown'}` : `Last update: ${lastUpdate}`}
                     </div>
-                    ${hasLastLocation ? '<div class="participant-status" style="font-size: 0.75rem; color: #8b5cf6;">📍 Click to see last location</div>' : ''}
+                    ${hasLocationData ? '<div class="participant-status" style="font-size: 0.75rem; color: #8b5cf6; font-weight: bold;">📌 Click to track movements</div>' : '<div class="participant-status" style="font-size: 0.75rem; color: #94a3b8; font-style: italic;">⚠️ No location data available</div>'}
                 </div>
-                ${(canRemove || isOnline || hasLastLocation) ? `
+                ${(canRemove || hasLocationData) ? `
                     <div class="participant-menu-container">
                         <button class="participant-menu-btn" data-participant-id="${p.id}" title="Actions">⋮</button>
                         <div class="participant-menu-dropdown" data-participant-id="${p.id}">
-                            ${(isOnline || hasLastLocation) ? `
+                            ${hasLocationData ? `
                                 <button class="menu-item" data-action="track" data-participant-id="${p.id}" data-participant-name="${p.name}">
                                     📌 Track
                                 </button>
@@ -427,31 +478,44 @@ function updateParticipantsList(participants) {
     
     // Add click handlers to participants
     participants.forEach(p => {
-        const isOnline = p.is_online !== undefined ? p.is_online : (p.latitude && p.longitude);
+        const isOnline = isReviewMode ? false : (p.is_online !== undefined ? p.is_online : (p.latitude && p.longitude));
         const hasLastLocation = !isOnline && p.latitude && p.longitude;
+        const hasLocationData = p.latitude && p.longitude;
         const element = participantsList.querySelector(`[data-participant-id="${p.id}"]`);
         
         if (element) {
-            // Add click handler for online participants - center on their marker
-            if (isOnline && p.latitude && p.longitude) {
+            // In review mode, clicking on a participant shows their track
+            if (isReviewMode && hasLocationData) {
                 element.addEventListener('click', (e) => {
                     // Don't trigger if clicking on menu button or menu items
                     if (e.target.closest('.participant-menu-container')) {
                         return;
                     }
-                    centerMapOnParticipant(p.id);
+                    showUserTrack(p.id, p.name);
                 });
-            }
-            
-            // Add click handler for offline participants with last location - show temporary marker
-            if (hasLastLocation) {
-                element.addEventListener('click', (e) => {
-                    // Don't trigger if clicking on menu button or menu items
-                    if (e.target.closest('.participant-menu-container')) {
-                        return;
-                    }
-                    showLastLocation(p);
-                });
+            } else {
+                // Normal mode behavior
+                // Add click handler for online participants - center on their marker
+                if (isOnline && p.latitude && p.longitude) {
+                    element.addEventListener('click', (e) => {
+                        // Don't trigger if clicking on menu button or menu items
+                        if (e.target.closest('.participant-menu-container')) {
+                            return;
+                        }
+                        centerMapOnParticipant(p.id);
+                    });
+                }
+                
+                // Add click handler for offline participants with last location - show temporary marker
+                if (hasLastLocation) {
+                    element.addEventListener('click', (e) => {
+                        // Don't trigger if clicking on menu button or menu items
+                        if (e.target.closest('.participant-menu-container')) {
+                            return;
+                        }
+                        showLastLocation(p);
+                    });
+                }
             }
             
             // Add click handler for menu button
@@ -648,8 +712,9 @@ async function showUserTrack(participantId, participantName) {
         // Clear any existing track markers and polyline
         clearTrackMarkers();
         
-        // Fetch position history
-        const response = await fetch(`/api/get_user_positions?participant_id=${participantId}&session_code=${sessionCode}`);
+        // Fetch position history (add review_mode parameter if in review mode)
+        const reviewParam = isReviewMode ? '&review_mode=true' : '';
+        const response = await fetch(`/api/get_user_positions?participant_id=${participantId}&session_code=${sessionCode}${reviewParam}`);
         const data = await response.json();
         
         if (!data.success) {
@@ -986,16 +1051,18 @@ document.getElementById('leaveSessionBtn').addEventListener('click', async () =>
 // Initialize
 initMap();
 loadSessionInfo().then(() => {
-    // Auto-start location sharing after session info is loaded
-    if (participantId) {
+    // Auto-start location sharing after session info is loaded (but not in review mode)
+    if (participantId && !isReviewMode) {
         setTimeout(() => {
             startSharing();
         }, 1000); // Small delay to ensure map is ready
     }
 });
 
-// Start polling for participants updates
-updateInterval = setInterval(loadParticipants, 3000); // Update every 3 seconds
+// Start polling for participants updates (only if not in review mode)
+if (!isReviewMode) {
+    updateInterval = setInterval(loadParticipants, 3000); // Update every 3 seconds
+}
 
 // Initial load
 loadParticipants();

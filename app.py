@@ -7,7 +7,7 @@ from flask import Flask, request, jsonify, session, send_from_directory, redirec
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime
+from datetime import datetime, timedelta
 import string
 import random
 import os
@@ -740,8 +740,13 @@ def join_session():
 @app.route('/api/get_session_info', methods=['GET'])
 def get_session_info():
     session_code = request.args.get('code', '').upper()
+    review_mode = request.args.get('review_mode', 'false').lower() == 'true'
     
-    user_session = Session.query.filter_by(session_code=session_code, is_active=True).first()
+    # In review mode, allow ended sessions; otherwise only active sessions
+    if review_mode:
+        user_session = Session.query.filter_by(session_code=session_code).first()
+    else:
+        user_session = Session.query.filter_by(session_code=session_code, is_active=True).first()
     
     if not user_session:
         return jsonify({'success': False, 'message': 'Session not found'}), 404
@@ -757,7 +762,8 @@ def get_session_info():
             'location_name': user_session.location_name,
             'created_at': user_session.created_at.isoformat(),
             'creator_id': user_session.creator_id,
-            'creator_name': creator.username if creator else None
+            'creator_name': creator.username if creator else None,
+            'is_active': user_session.is_active
         }
     })
 
@@ -910,6 +916,78 @@ def get_participants():
             'accuracy': accuracy,
             'last_update': last_update,
             'is_online': is_online
+        })
+    
+    return jsonify({'success': True, 'participants': participants_data})
+
+@app.route('/api/get_all_participants_for_review', methods=['GET'])
+def get_all_participants_for_review():
+    """Get all participants (including inactive) for an ended session - for review mode"""
+    session_code = request.args.get('code', '').upper()
+    
+    # Check if user is authenticated
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'message': 'Not authenticated'}), 401
+    
+    user_session = Session.query.filter_by(session_code=session_code).first()
+    
+    if not user_session:
+        return jsonify({'success': False, 'message': 'Session not found'}), 404
+    
+    # Check if session is ended
+    if user_session.is_active:
+        return jsonify({'success': False, 'message': 'Session is still active'}), 400
+    
+    # Check if user was part of this session (either creator or participant)
+    current_user_id = session['user_id']
+    is_creator = user_session.creator_id == current_user_id
+    was_participant = SessionParticipant.query.filter_by(
+        session_id=user_session.id,
+        user_id=current_user_id
+    ).first() is not None
+    
+    if not is_creator and not was_participant:
+        return jsonify({'success': False, 'message': 'You were not part of this session'}), 403
+    
+    # Get ALL participants (including inactive ones) who ever joined this session
+    participants = SessionParticipant.query.filter_by(
+        session_id=user_session.id
+    ).order_by(SessionParticipant.joined_at).all()
+    
+    participants_data = []
+    for p in participants:
+        name = p.user.username if p.user else p.guest_name
+        
+        # Get last known position from UserPosition table for registered users
+        latitude = None
+        longitude = None
+        accuracy = None
+        last_update = None
+        
+        if p.user_id:
+            # Get last known position from UserPosition table
+            last_position = UserPosition.query.filter_by(
+                user_id=p.user_id
+            ).order_by(UserPosition.timestamp.desc()).first()
+            
+            if last_position:
+                latitude = last_position.latitude
+                longitude = last_position.longitude
+                accuracy = last_position.accuracy
+                last_update = last_position.timestamp.isoformat()
+        
+        participants_data.append({
+            'id': p.id,
+            'user_id': p.user_id,
+            'name': name,
+            'is_guest': p.user_id is None,
+            'profile_picture': p.user.profile_picture if p.user else None,
+            'latitude': latitude,
+            'longitude': longitude,
+            'accuracy': accuracy,
+            'last_update': last_update,
+            'is_active': p.is_active,
+            'joined_at': p.joined_at.isoformat() if p.joined_at else None
         })
     
     return jsonify({'success': True, 'participants': participants_data})
@@ -1248,20 +1326,39 @@ def mark_notifications_read():
 @app.route('/api/get_user_positions', methods=['GET'])
 def get_user_positions():
     """Get position history for a specific user in a session"""
-    if 'participant_id' not in session:
-        return jsonify({'success': False, 'message': 'Not a participant'}), 401
-    
     participant_id = request.args.get('participant_id')
     session_code = request.args.get('session_code')
+    review_mode = request.args.get('review_mode', 'false').lower() == 'true'
     
     if not participant_id or not session_code:
         return jsonify({'success': False, 'message': 'Missing parameters'}), 400
+    
+    # In review mode, check if user is authenticated and was part of the session
+    # In normal mode, check if user is an active participant
+    if review_mode:
+        if 'user_id' not in session:
+            return jsonify({'success': False, 'message': 'Not authenticated'}), 401
+    else:
+        if 'participant_id' not in session:
+            return jsonify({'success': False, 'message': 'Not a participant'}), 401
     
     try:
         # Get the session
         session_obj = Session.query.filter_by(session_code=session_code).first()
         if not session_obj:
             return jsonify({'success': False, 'message': 'Session not found'}), 404
+        
+        # In review mode, verify user was part of this session
+        if review_mode:
+            current_user_id = session['user_id']
+            is_creator = session_obj.creator_id == current_user_id
+            was_participant = SessionParticipant.query.filter_by(
+                session_id=session_obj.id,
+                user_id=current_user_id
+            ).first() is not None
+            
+            if not is_creator and not was_participant:
+                return jsonify({'success': False, 'message': 'You were not part of this session'}), 403
         
         # Get the participant
         participant = SessionParticipant.query.filter_by(
@@ -1288,16 +1385,21 @@ def get_user_positions():
                 'timestamp': pos.timestamp.isoformat()
             } for pos in positions]
             
+            # Get participant name
+            participant_name = participant.user.username if participant.user else participant.guest_name
+            
             return jsonify({
                 'success': True,
                 'positions': positions_data,
-                'participant_name': participant.name
+                'participant_name': participant_name
             })
         else:
+            # Guest user - no position history
+            participant_name = participant.guest_name
             return jsonify({
                 'success': True,
                 'positions': [],
-                'participant_name': participant.name
+                'participant_name': participant_name
             })
             
     except Exception as e:
