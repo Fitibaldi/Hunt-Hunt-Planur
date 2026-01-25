@@ -7,11 +7,13 @@ let sessionCode = null;
 let isSharing = false;
 let watchId = null;
 let updateInterval = null;
+let positionUpdateInterval = null; // Interval for sending position updates every 1 minute
 let isCreator = false;
 let creatorId = null;
 let currentUserId = null;
 let temporaryMarker = null; // For showing offline user's last location
 let participantsData = []; // Store all participants data including offline ones
+let lastPosition = null; // Store last known position
 
 // Get session code from URL
 const urlParams = new URLSearchParams(window.location.search);
@@ -167,21 +169,34 @@ async function startSharing() {
         toggleBtn.classList.remove('btn-primary');
         toggleBtn.classList.add('btn-danger');
         
-        // Watch position
+        // Watch position for real-time updates (for map display)
         watchId = navigator.geolocation.watchPosition(
-            updateLocation,
+            (pos) => {
+                // Store the latest position
+                lastPosition = pos;
+            },
             handleLocationError,
             {
                 enableHighAccuracy: true,
-                timeout: 60000,  // 60 seconds - longer timeout to prevent premature stopping
+                timeout: 60000,  // 60 seconds
                 maximumAge: 5000  // Allow cached position up to 5 seconds old
             }
         );
         
+        // Send initial position update
+        await updateLocation(position);
+        
+        // Set up interval to send position updates every 1 minute
+        positionUpdateInterval = setInterval(async () => {
+            if (isSharing && lastPosition) {
+                await updateLocation(lastPosition);
+            }
+        }, 60000); // 60000ms = 1 minute
+        
         // Center map on user
         map.setView([position.coords.latitude, position.coords.longitude], 15);
         
-        showMessage('Location sharing started', 'success');
+        showMessage('Location sharing started (updates every 1 minute)', 'success');
     } catch (error) {
         showMessage('Failed to get location: ' + error.message, 'error');
     }
@@ -194,7 +209,14 @@ async function stopSharing() {
         watchId = null;
     }
     
+    // Clear position update interval
+    if (positionUpdateInterval !== null) {
+        clearInterval(positionUpdateInterval);
+        positionUpdateInterval = null;
+    }
+    
     isSharing = false;
+    lastPosition = null;
     
     // Notify server to mark as offline
     try {
