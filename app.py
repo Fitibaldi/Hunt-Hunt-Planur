@@ -39,6 +39,7 @@ class User(db.Model):
     
     sessions = db.relationship('Session', backref='creator', lazy=True)
     participants = db.relationship('SessionParticipant', backref='user', lazy=True)
+    positions = db.relationship('UserPosition', backref='user', lazy=True, cascade='all, delete-orphan')
 
 class Session(db.Model):
     __tablename__ = 'sessions'
@@ -71,6 +72,15 @@ class Location(db.Model):
     longitude = db.Column(db.Float, nullable=False)
     accuracy = db.Column(db.Float)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+class UserPosition(db.Model):
+    __tablename__ = 'user_positions'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    latitude = db.Column(db.Float, nullable=False)
+    longitude = db.Column(db.Float, nullable=False)
+    accuracy = db.Column(db.Float)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 
 class Notification(db.Model):
     __tablename__ = 'notifications'
@@ -798,15 +808,36 @@ def update_location():
     
     try:
         db.session.add(location)
+        
+        # Save position to UserPosition table for registered users
+        participant = SessionParticipant.query.get(session['participant_id'])
+        if participant and participant.user_id:
+            user_position = UserPosition(
+                user_id=participant.user_id,
+                latitude=latitude,
+                longitude=longitude,
+                accuracy=accuracy
+            )
+            db.session.add(user_position)
+        
         db.session.commit()
         
-        # Clean up old locations (keep last 100)
+        # Clean up old locations (keep last 100 per participant)
         old_locations = Location.query.filter_by(
             participant_id=session['participant_id']
         ).order_by(Location.timestamp.desc()).offset(100).all()
         
         for old_loc in old_locations:
             db.session.delete(old_loc)
+        
+        # Clean up old user positions (keep last 1000 per user)
+        if participant and participant.user_id:
+            old_positions = UserPosition.query.filter_by(
+                user_id=participant.user_id
+            ).order_by(UserPosition.timestamp.desc()).offset(1000).all()
+            
+            for old_pos in old_positions:
+                db.session.delete(old_pos)
         
         db.session.commit()
         
@@ -831,7 +862,7 @@ def get_participants():
     
     participants_data = []
     for p in participants:
-        # Get latest location
+        # Get latest location from session
         latest_location = Location.query.filter_by(
             participant_id=p.id
         ).order_by(Location.timestamp.desc()).first()
@@ -844,16 +875,40 @@ def get_participants():
             time_diff = (datetime.utcnow() - latest_location.timestamp).total_seconds()
             is_online = time_diff < 30
         
+        # Determine which position to show
+        latitude = None
+        longitude = None
+        accuracy = None
+        last_update = None
+        
+        if is_online and latest_location:
+            # User is online: show current position from session location
+            latitude = latest_location.latitude
+            longitude = latest_location.longitude
+            accuracy = latest_location.accuracy
+            last_update = latest_location.timestamp.isoformat()
+        elif not is_online and p.user_id:
+            # User is offline but is a registered user: get last known position from UserPosition table
+            last_position = UserPosition.query.filter_by(
+                user_id=p.user_id
+            ).order_by(UserPosition.timestamp.desc()).first()
+            
+            if last_position:
+                latitude = last_position.latitude
+                longitude = last_position.longitude
+                accuracy = last_position.accuracy
+                last_update = last_position.timestamp.isoformat()
+        
         participants_data.append({
             'id': p.id,
             'user_id': p.user_id,
             'name': name,
             'is_guest': p.user_id is None,
             'profile_picture': p.user.profile_picture if p.user else None,
-            'latitude': latest_location.latitude if latest_location and is_online else None,
-            'longitude': latest_location.longitude if latest_location and is_online else None,
-            'accuracy': latest_location.accuracy if latest_location else None,
-            'last_update': latest_location.timestamp.isoformat() if latest_location else None,
+            'latitude': latitude,
+            'longitude': longitude,
+            'accuracy': accuracy,
+            'last_update': last_update,
             'is_online': is_online
         })
     
