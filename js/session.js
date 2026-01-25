@@ -14,6 +14,8 @@ let currentUserId = null;
 let temporaryMarker = null; // For showing offline user's last location
 let participantsData = []; // Store all participants data including offline ones
 let lastPosition = null; // Store last known position
+let trackMarkers = []; // Store track markers for position history
+let trackPolyline = null; // Store polyline for track path
 
 // Get session code from URL
 const urlParams = new URLSearchParams(window.location.search);
@@ -402,13 +404,20 @@ function updateParticipantsList(participants) {
                     </div>
                     ${hasLastLocation ? '<div class="participant-status" style="font-size: 0.75rem; color: #8b5cf6;">📍 Click to see last location</div>' : ''}
                 </div>
-                ${canRemove ? `
+                ${(canRemove || isOnline || hasLastLocation) ? `
                     <div class="participant-menu-container">
                         <button class="participant-menu-btn" data-participant-id="${p.id}" title="Actions">⋮</button>
                         <div class="participant-menu-dropdown" data-participant-id="${p.id}">
-                            <button class="menu-item menu-item-danger" data-action="remove" data-participant-id="${p.id}" data-participant-name="${p.name}">
-                                🗑️ Remove User
-                            </button>
+                            ${(isOnline || hasLastLocation) ? `
+                                <button class="menu-item" data-action="track" data-participant-id="${p.id}" data-participant-name="${p.name}">
+                                    📌 Track
+                                </button>
+                            ` : ''}
+                            ${canRemove ? `
+                                <button class="menu-item menu-item-danger" data-action="remove" data-participant-id="${p.id}" data-participant-name="${p.name}">
+                                    🗑️ Remove User
+                                </button>
+                            ` : ''}
                         </div>
                     </div>
                 ` : ''}
@@ -465,6 +474,8 @@ function updateParticipantsList(participants) {
                     
                     if (action === 'remove') {
                         removeParticipant(participantId, participantName);
+                    } else if (action === 'track') {
+                        showUserTrack(participantId, participantName);
                     }
                     
                     // Close all menus
@@ -628,6 +639,105 @@ async function removeParticipant(participantId, participantName) {
     } catch (error) {
         console.error('Remove participant error:', error);
         showMessage('Failed to remove participant', 'error');
+    }
+}
+
+// Show user track (position history)
+async function showUserTrack(participantId, participantName) {
+    try {
+        // Clear any existing track markers and polyline
+        clearTrackMarkers();
+        
+        // Fetch position history
+        const response = await fetch(`/api/get_user_positions?participant_id=${participantId}&session_code=${sessionCode}`);
+        const data = await response.json();
+        
+        if (!data.success) {
+            showMessage(data.message || 'Failed to load position history', 'error');
+            return;
+        }
+        
+        if (!data.positions || data.positions.length === 0) {
+            showMessage(`No position history available for ${participantName}`, 'info');
+            return;
+        }
+        
+        const positions = data.positions;
+        const latLngs = [];
+        
+        // Create markers for each position
+        positions.forEach((pos, index) => {
+            const lat = parseFloat(pos.latitude);
+            const lng = parseFloat(pos.longitude);
+            latLngs.push([lat, lng]);
+            
+            const timestamp = new Date(pos.timestamp).toLocaleString();
+            const isLast = index === positions.length - 1;
+            
+            // Create pin marker with emoji
+            const icon = L.divIcon({
+                className: 'track-marker',
+                html: `
+                    <div style="
+                        font-size: 24px;
+                        text-align: center;
+                        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+                        ${isLast ? 'animation: pulse 2s infinite;' : ''}
+                    ">📌</div>
+                `,
+                iconSize: [24, 24],
+                iconAnchor: [12, 24]
+            });
+            
+            const marker = L.marker([lat, lng], { icon })
+                .addTo(map)
+                .bindTooltip(`
+                    <b>${participantName}</b><br>
+                    ${timestamp}${isLast ? '<br><span style="color: #10b981;">📍 Last known location</span>' : ''}
+                `, {
+                    permanent: false,
+                    direction: 'top'
+                });
+            
+            trackMarkers.push(marker);
+        });
+        
+        // Draw polyline connecting all positions
+        if (latLngs.length > 1) {
+            trackPolyline = L.polyline(latLngs, {
+                color: '#8b5cf6',
+                weight: 3,
+                opacity: 0.7,
+                dashArray: '10, 5'
+            }).addTo(map);
+        }
+        
+        // Fit map to show all positions
+        if (latLngs.length > 0) {
+            const bounds = L.latLngBounds(latLngs);
+            map.fitBounds(bounds, { padding: [50, 50] });
+        }
+        
+        showMessage(`Showing ${positions.length} location${positions.length > 1 ? 's' : ''} for ${participantName}`, 'success');
+        
+    } catch (error) {
+        console.error('Show user track error:', error);
+        showMessage('Failed to load position history', 'error');
+    }
+}
+
+// Clear track markers and polyline
+function clearTrackMarkers() {
+    // Remove all track markers
+    trackMarkers.forEach(marker => {
+        map.removeLayer(marker);
+    });
+    trackMarkers = [];
+    
+    // Remove polyline
+    if (trackPolyline) {
+        map.removeLayer(trackPolyline);
+        trackPolyline = null;
     }
 }
 

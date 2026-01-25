@@ -873,6 +873,22 @@ header h1 {
     }
 }
 
+@keyframes pulse {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.2);
+        opacity: 0.8;
+    }
+}
+
+.track-marker {
+    background: transparent;
+    border: none;
+}
+
 /* Profile Page */
 .profile-container {
     max-width: 600px;

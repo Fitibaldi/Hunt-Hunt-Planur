@@ -1245,6 +1245,65 @@ def mark_notifications_read():
         db.session.rollback()
         return jsonify({'success': False, 'message': 'Server error'}), 500
 
+@app.route('/api/get_user_positions', methods=['GET'])
+def get_user_positions():
+    """Get position history for a specific user in a session"""
+    if 'participant_id' not in session:
+        return jsonify({'success': False, 'message': 'Not a participant'}), 401
+    
+    participant_id = request.args.get('participant_id')
+    session_code = request.args.get('session_code')
+    
+    if not participant_id or not session_code:
+        return jsonify({'success': False, 'message': 'Missing parameters'}), 400
+    
+    try:
+        # Get the session
+        session_obj = Session.query.filter_by(session_code=session_code).first()
+        if not session_obj:
+            return jsonify({'success': False, 'message': 'Session not found'}), 404
+        
+        # Get the participant
+        participant = SessionParticipant.query.filter_by(
+            id=participant_id,
+            session_id=session_obj.id
+        ).first()
+        
+        if not participant:
+            return jsonify({'success': False, 'message': 'Participant not found'}), 404
+        
+        # Get user positions for this participant's user_id
+        if participant.user_id:
+            # Get positions from the last 24 hours
+            time_limit = datetime.utcnow() - timedelta(hours=24)
+            positions = UserPosition.query.filter(
+                UserPosition.user_id == participant.user_id,
+                UserPosition.timestamp >= time_limit
+            ).order_by(UserPosition.timestamp.asc()).all()
+            
+            positions_data = [{
+                'latitude': pos.latitude,
+                'longitude': pos.longitude,
+                'accuracy': pos.accuracy,
+                'timestamp': pos.timestamp.isoformat()
+            } for pos in positions]
+            
+            return jsonify({
+                'success': True,
+                'positions': positions_data,
+                'participant_name': participant.name
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'positions': [],
+                'participant_name': participant.name
+            })
+            
+    except Exception as e:
+        print(f"Error getting user positions: {e}")
+        return jsonify({'success': False, 'message': 'Server error'}), 500
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
