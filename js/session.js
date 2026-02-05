@@ -217,7 +217,7 @@ async function startSharing() {
             handleLocationError,
             {
                 enableHighAccuracy: true,
-                timeout: 60000,  // 60 seconds
+                timeout: 1000,  // 01 second
                 maximumAge: 5000  // Allow cached position up to 5 seconds old
             }
         );
